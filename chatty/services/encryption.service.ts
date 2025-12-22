@@ -1,152 +1,164 @@
 // services/encryption.service.ts
-import { SignalProtocolStore } from './signal-store';
-import {
-  KeyHelper,
-  SessionBuilder,
-  SessionCipher,
-  SignalProtocolAddress,
-} from '@privacyresearch/libsignal-protocol-typescript';
-
-import 'text-encoding';
-import { Buffer } from 'buffer';
-global.Buffer = global.Buffer || Buffer;
+import nacl from 'tweetnacl';
+import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class EncryptionService {
-  private store: SignalProtocolStore | null = null;
+  private keyPair: nacl.BoxKeyPair | null = null;
+  private userId: string | null = null;
   private initialized = false;
 
   async initialize(userId: string) {
-    if (this.initialized && this.store) return;
+    if (this.initialized && this.userId === userId) return;
     
-    this.store = new SignalProtocolStore(userId);
-    await this.store.initialize();
+    this.userId = userId;
+    
+    // Try to load existing keys
+    const storedKeys = await this.loadKeys(userId);
+    
+    if (storedKeys) {
+      this.keyPair = storedKeys;
+      console.log('✅ Loaded existing encryption keys');
+    } else {
+      // Generate new keys if they don't exist
+      this.keyPair = nacl.box.keyPair();
+      await this.saveKeys(userId, this.keyPair);
+      console.log('✅ Generated new encryption keys');
+    }
+    
     this.initialized = true;
   }
 
   private ensureInitialized() {
-    if (!this.store || !this.initialized) {
+    if (!this.initialized || !this.keyPair) {
       throw new Error('Encryption service not initialized. Call initialize() first.');
     }
   }
 
-  // Generate keys for new user
+  /**
+   * Generate public keys to share with other users
+   */
   async generateKeys() {
     this.ensureInitialized();
     
-    const identityKeyPair = await KeyHelper.generateIdentityKeyPair();
-    const registrationId = KeyHelper.generateRegistrationId();
-    const preKeys = await KeyHelper.generatePreKeys(0, 100);
-    const signedPreKey = await KeyHelper.generateSignedPreKey(identityKeyPair, 0);
-
-    // Store locally
-    await this.store!.saveIdentityKeyPair(identityKeyPair);
-    await this.store!.saveRegistrationId(registrationId);
-    
-    // Store pre-keys
-    for (const preKey of preKeys) {
-      await this.store!.storePreKey(preKey.keyId, preKey.keyPair);
-    }
-    await this.store!.storeSignedPreKey(signedPreKey.keyId, signedPreKey.keyPair);
-
-    // Return public keys to store in Firestore
     return {
-      identityKey: this.arrayBufferToBase64(identityKeyPair.pubKey),
-      registrationId,
-      preKey: this.arrayBufferToBase64(preKeys[0].keyPair.pubKey),
-      preKeyId: preKeys[0].keyId,
-      signedPreKey: this.arrayBufferToBase64(signedPreKey.keyPair.pubKey),
-      signedPreKeyId: signedPreKey.keyId,
-      signedPreKeySignature: this.arrayBufferToBase64(signedPreKey.signature),
+      publicKey: encodeBase64(this.keyPair!.publicKey),
     };
   }
 
-  // Build session with other user
-  async buildSession(theirUserId: string, theirPublicKeys: any) {
+  /**
+   * Encrypt a message for a recipient
+   */
+  async encryptMessage(recipientPublicKey: string, plaintext: string): Promise<string> {
     this.ensureInitialized();
     
-    const address = new SignalProtocolAddress(theirUserId, 1);
-    const sessionBuilder = new SessionBuilder(this.store!, address);
+    // Decode recipient's public key
+    const theirPublicKey = decodeBase64(recipientPublicKey);
     
-    await sessionBuilder.processPreKey({
-      registrationId: theirPublicKeys.registrationId,
-      identityKey: this.base64ToArrayBuffer(theirPublicKeys.identityKey),
-      signedPreKey: {
-        keyId: theirPublicKeys.signedPreKeyId,
-        publicKey: this.base64ToArrayBuffer(theirPublicKeys.signedPreKey),
-        signature: this.base64ToArrayBuffer(theirPublicKeys.signedPreKeySignature),
-      },
-      preKey: {
-        keyId: theirPublicKeys.preKeyId,
-        publicKey: this.base64ToArrayBuffer(theirPublicKeys.preKey),
-      },
-    });
-  }
-
-  // Encrypt message
-  async encryptMessage(recipientId: string, plaintext: string): Promise<any> {
-    this.ensureInitialized();
+    // Generate a random nonce
+    const nonce = nacl.randomBytes(nacl.box.nonceLength);
     
-    const address = new SignalProtocolAddress(recipientId, 1);
-    const sessionCipher = new SessionCipher(this.store!, address);
+    // Encode message to bytes
+    const messageBytes = decodeUTF8(plaintext);
     
-    const ciphertext = await sessionCipher.encrypt(
-      new TextEncoder().encode(plaintext).buffer
+    // Encrypt the message
+    const encrypted = nacl.box(
+      messageBytes,
+      nonce,
+      theirPublicKey,
+      this.keyPair!.secretKey
     );
     
-    return {
-      type: ciphertext.type,
-      body: this.arrayBufferToBase64(ciphertext.body!),
-      registrationId: ciphertext.registrationId,
+    // Combine nonce + encrypted data
+    const fullMessage = new Uint8Array(nonce.length + encrypted.length);
+    fullMessage.set(nonce);
+    fullMessage.set(encrypted, nonce.length);
+    
+    // Return as base64
+    return encodeBase64(fullMessage);
+  }
+
+  /**
+   * Decrypt a message from a sender
+   */
+  async decryptMessage(senderPublicKey: string, ciphertext: string): Promise<string> {
+    this.ensureInitialized();
+    
+    // Decode sender's public key
+    const theirPublicKey = decodeBase64(senderPublicKey);
+    
+    // Decode the ciphertext
+    const fullMessage = decodeBase64(ciphertext);
+    
+    // Extract nonce and encrypted data
+    const nonce = fullMessage.slice(0, nacl.box.nonceLength);
+    const encrypted = fullMessage.slice(nacl.box.nonceLength);
+    
+    // Decrypt the message
+    const decrypted = nacl.box.open(
+      encrypted,
+      nonce,
+      theirPublicKey,
+      this.keyPair!.secretKey
+    );
+    
+    if (!decrypted) {
+      throw new Error('Failed to decrypt message');
+    }
+    
+    // Decode bytes to string
+    return encodeUTF8(decrypted);
+  }
+
+  /**
+   * Get own public key
+   */
+  getPublicKey(): string {
+    this.ensureInitialized();
+    return encodeBase64(this.keyPair!.publicKey);
+  }
+
+  /**
+   * Save keys to secure storage
+   */
+  private async saveKeys(userId: string, keyPair: nacl.BoxKeyPair): Promise<void> {
+    const keys = {
+      publicKey: encodeBase64(keyPair.publicKey),
+      secretKey: encodeBase64(keyPair.secretKey),
     };
+    
+    await AsyncStorage.setItem(
+      `encryption_keys_${userId}`,
+      JSON.stringify(keys)
+    );
   }
 
-  // Decrypt message
-  async decryptMessage(senderId: string, ciphertext: any): Promise<string> {
-    this.ensureInitialized();
-    
-    const address = new SignalProtocolAddress(senderId, 1);
-    const sessionCipher = new SessionCipher(this.store!, address);
-    
-    const messageBody = this.base64ToArrayBuffer(ciphertext.body);
-    
-    let plaintext: ArrayBuffer;
-    if (ciphertext.type === 3) {
-      // PreKey message
-      plaintext = await sessionCipher.decryptPreKeyWhisperMessage(messageBody);
-    } else {
-      // Regular message
-      plaintext = await sessionCipher.decryptWhisperMessage(messageBody);
+  /**
+   * Load keys from secure storage
+   */
+  private async loadKeys(userId: string): Promise<nacl.BoxKeyPair | null> {
+    try {
+      const stored = await AsyncStorage.getItem(`encryption_keys_${userId}`);
+      
+      if (!stored) return null;
+      
+      const keys = JSON.parse(stored);
+      
+      return {
+        publicKey: decodeBase64(keys.publicKey),
+        secretKey: decodeBase64(keys.secretKey),
+      };
+    } catch (error) {
+      console.error('Error loading keys:', error);
+      return null;
     }
-    
-    return new TextDecoder().decode(plaintext);
   }
 
-  // Helper: ArrayBuffer to Base64
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  // Helper: Base64 to ArrayBuffer
-  private base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-
-  // Check if session exists
-  async hasSession(userId: string): Promise<boolean> {
-    this.ensureInitialized();
-    const address = new SignalProtocolAddress(userId, 1);
-    const session = await this.store!.loadSession(address.toString());
-    return session !== undefined;
+  /**
+   * Check if encryption is ready
+   */
+  isReady(): boolean {
+    return this.initialized && this.keyPair !== null;
   }
 }
 

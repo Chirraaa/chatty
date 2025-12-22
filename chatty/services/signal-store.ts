@@ -4,7 +4,7 @@ import {
   KeyPairType,
   PreKeyType,
   SessionRecordType,
-  SignedPreKeyType,
+  SignedPreKeyPairType,
 } from '@privacyresearch/libsignal-protocol-typescript';
 
 export class SignalProtocolStore {
@@ -55,8 +55,8 @@ export class SignalProtocolStore {
     return data ? parseInt(data, 10) : undefined;
   }
 
-  // Pre Keys
-  async storePreKey(keyId: number, keyPair: KeyPairType<ArrayBuffer>): Promise<void> {
+  // Pre Keys - Accept string or number
+  async storePreKey(keyId: string | number, keyPair: KeyPairType<ArrayBuffer>): Promise<void> {
     await AsyncStorage.setItem(
       `${this.prefix}preKey_${keyId}`,
       JSON.stringify({
@@ -66,7 +66,7 @@ export class SignalProtocolStore {
     );
   }
 
-  async loadPreKey(keyId: number): Promise<KeyPairType<ArrayBuffer> | undefined> {
+  async loadPreKey(keyId: string | number): Promise<KeyPairType<ArrayBuffer> | undefined> {
     const data = await AsyncStorage.getItem(`${this.prefix}preKey_${keyId}`);
     if (!data) return undefined;
     
@@ -77,12 +77,12 @@ export class SignalProtocolStore {
     };
   }
 
-  async removePreKey(keyId: number): Promise<void> {
+  async removePreKey(keyId: string | number): Promise<void> {
     await AsyncStorage.removeItem(`${this.prefix}preKey_${keyId}`);
   }
 
-  // Signed Pre Keys
-  async storeSignedPreKey(keyId: number, keyPair: KeyPairType<ArrayBuffer>): Promise<void> {
+  // Signed Pre Keys - Accept string or number
+  async storeSignedPreKey(keyId: string | number, keyPair: KeyPairType<ArrayBuffer>): Promise<void> {
     await AsyncStorage.setItem(
       `${this.prefix}signedPreKey_${keyId}`,
       JSON.stringify({
@@ -92,7 +92,7 @@ export class SignalProtocolStore {
     );
   }
 
-  async loadSignedPreKey(keyId: number): Promise<KeyPairType<ArrayBuffer> | undefined> {
+  async loadSignedPreKey(keyId: string | number): Promise<KeyPairType<ArrayBuffer> | undefined> {
     const data = await AsyncStorage.getItem(`${this.prefix}signedPreKey_${keyId}`);
     if (!data) return undefined;
     
@@ -103,7 +103,7 @@ export class SignalProtocolStore {
     };
   }
 
-  async removeSignedPreKey(keyId: number): Promise<void> {
+  async removeSignedPreKey(keyId: string | number): Promise<void> {
     await AsyncStorage.removeItem(`${this.prefix}signedPreKey_${keyId}`);
   }
 

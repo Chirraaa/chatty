@@ -21,7 +21,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     // Listen for auth state changes
-    const unsubscribe = auth().onAuthStateChanged(async (user) => {
+    const unsubscribe = auth().onAuthStateChanged(async (user: any) => {
       if (user) {
         // User is signed in, initialize encryption
         try {

@@ -88,14 +88,14 @@ class CallService {
       }
 
       // Handle remote stream
-      this.peerConnection.ontrack = (event) => {
+      (this.peerConnection as any).ontrack = (event: any) => {
         if (event.streams && event.streams[0]) {
           this.remoteStream = event.streams[0];
         }
       };
 
       // Handle ICE candidates
-      this.peerConnection.onicecandidate = async (event) => {
+      (this.peerConnection as any).onicecandidate = async (event: any) => {
         if (event.candidate) {
           await firestore()
             .collection('calls')
@@ -158,14 +158,14 @@ class CallService {
       }
 
       // Handle remote stream
-      this.peerConnection.ontrack = (event) => {
+      (this.peerConnection as any).ontrack = (event: any) => {
         if (event.streams && event.streams[0]) {
           this.remoteStream = event.streams[0];
         }
       };
 
       // Handle ICE candidates
-      this.peerConnection.onicecandidate = async (event) => {
+      (this.peerConnection as any).onicecandidate = async (event: any) => {
         if (event.candidate) {
           await firestore()
             .collection('calls')
@@ -212,7 +212,11 @@ class CallService {
         const data = snapshot.data();
         if (!data) return;
 
-        if (data.answer && !this.peerConnection?.currentRemoteDescription) {
+        // Check if we already have a remote description
+        const hasRemoteDesc = this.peerConnection && 
+          (this.peerConnection as any).remoteDescription;
+
+        if (data.answer && !hasRemoteDesc) {
           const answer = new RTCSessionDescription(data.answer);
           await this.peerConnection?.setRemoteDescription(answer);
         }
