@@ -15,6 +15,11 @@ interface IncomingCall {
   isVideo: boolean;
 }
 
+// Firebase error type
+interface FirebaseError extends Error {
+  code?: string;
+}
+
 export function IncomingCallListener() {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
 
@@ -56,12 +61,14 @@ export function IncomingCallListener() {
             console.error('❌ Error processing incoming call:', error);
           }
         },
-        (error) => {
+        (error: FirebaseError) => {
           console.error('❌ Error in incoming call listener:', error);
           
           // Provide helpful error message
           if (error.code === 'permission-denied') {
             console.error('💡 Permission denied: Check your Firestore security rules');
+          } else if (error.code) {
+            console.error(`💡 Firebase error code: ${error.code}`);
           }
         }
       );

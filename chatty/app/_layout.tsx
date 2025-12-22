@@ -1,7 +1,6 @@
 // app/_layout.tsx
-// CRITICAL: These imports MUST be in this order
-import 'react-native-get-random-values'; // 1. Random number generator FIRST
-import '../polyfills'; // 2. Then other polyfills
+// CRITICAL: Polyfills MUST be imported first
+import '../polyfills';
 
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

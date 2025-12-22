@@ -9,8 +9,8 @@ export interface Message {
     senderId: string;
     receiverId: string;
     type: 'text' | 'image';
-    content?: any; // Encrypted message object
-    imageData?: any; // Encrypted image object
+    content?: string; // Encrypted content
+    imageData?: string; // Encrypted image data
     timestamp: Date;
     decryptedContent?: string;
     decryptedImageUri?: string;
@@ -18,6 +18,9 @@ export interface Message {
 
 class MessageService {
 
+    /**
+     * Get recipient's public key from Firestore
+     */
     private async getRecipientPublicKey(userId: string): Promise<string> {
         const userDoc = await firestore()
             .collection('users')
@@ -33,27 +36,20 @@ class MessageService {
     }
 
     /**
-     * 
-     * Ensure encryption session exists with recipient
+     * Get sender's public key from Firestore (for decryption)
      */
-    private async ensureSession(receiverId: string) {
-        const hasSession = await encryptionService.hasSession(receiverId);
+    private async getSenderPublicKey(senderId: string): Promise<string> {
+        const userDoc = await firestore()
+            .collection('users')
+            .doc(senderId)
+            .get();
 
-        if (!hasSession) {
-            // Fetch recipient's public keys from Firestore
-            const userDoc = await firestore()
-                .collection('users')
-                .doc(receiverId)
-                .get();
-
-            const userData = userDoc.data();
-            if (!userData?.publicKeys) {
-                throw new Error('Recipient public keys not found');
-            }
-
-            // Build session
-            await encryptionService.buildSession(receiverId, userData.publicKeys);
+        const userData = userDoc.data();
+        if (!userData?.publicKey) {
+            throw new Error('Sender public key not found');
         }
+
+        return userData.publicKey;
     }
 
     /**
@@ -102,12 +98,12 @@ class MessageService {
             const base64Data = await imageService.getBase64(imageUri);
             console.log(`Base64 size: ${(base64Data.length / 1024).toFixed(2)}KB`);
 
-            // Ensure session exists
-            await this.ensureSession(receiverId);
+            // Get recipient's public key
+            const recipientPublicKey = await this.getRecipientPublicKey(receiverId);
 
             // ENCRYPT the base64 data
             console.log('Encrypting image...');
-            const encryptedImage = await encryptionService.encryptMessage(receiverId, base64Data);
+            const encryptedImage = await encryptionService.encryptMessage(recipientPublicKey, base64Data);
 
             console.log('Saving to Firestore...');
             const docRef = await firestore()
@@ -130,7 +126,6 @@ class MessageService {
 
     /**
      * Subscribe to messages (AUTO-DECRYPTS)
-     * ✅ IMPROVED: More efficient query that properly filters messages
      */
     subscribeToMessages(
         otherUserId: string,
@@ -140,13 +135,11 @@ class MessageService {
             const currentUser = auth().currentUser;
             if (!currentUser) throw new Error('Not authenticated');
 
-            // Create a composite collection group that gets messages between these two users
-            // We need to listen to two queries and merge them
             let allMessages: Message[] = [];
             let unsubscribe1: (() => void) | null = null;
             let unsubscribe2: (() => void) | null = null;
 
-            const processMessages = async (snapshot: any, isFirstQuery: boolean) => {
+            const processMessages = async (snapshot: any) => {
                 const newMessages: Message[] = [];
 
                 for (const doc of snapshot.docs) {
@@ -161,16 +154,19 @@ class MessageService {
                     };
 
                     try {
+                        // Get sender's public key for decryption
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+
                         if (data.type === 'text' && data.content) {
                             // DECRYPT text
                             message.decryptedContent = await encryptionService.decryptMessage(
-                                data.senderId,
+                                senderPublicKey,
                                 data.content
                             );
                         } else if (data.type === 'image' && data.imageData) {
                             // DECRYPT image data
                             const decryptedBase64 = await encryptionService.decryptMessage(
-                                data.senderId,
+                                senderPublicKey,
                                 data.imageData
                             );
                             message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
@@ -179,7 +175,9 @@ class MessageService {
                         newMessages.push(message);
                     } catch (decryptError) {
                         console.error('Failed to decrypt message:', decryptError);
-                        // Skip messages that fail to decrypt
+                        // Add the message anyway but mark it as failed to decrypt
+                        message.decryptedContent = '[Failed to decrypt]';
+                        newMessages.push(message);
                     }
                 }
 
@@ -207,7 +205,7 @@ class MessageService {
                 .where('receiverId', '==', otherUserId)
                 .orderBy('timestamp', 'asc')
                 .onSnapshot(
-                    snapshot => processMessages(snapshot, true),
+                    snapshot => processMessages(snapshot),
                     error => console.error('Query 1 error:', error)
                 );
 
@@ -218,7 +216,7 @@ class MessageService {
                 .where('receiverId', '==', currentUser.uid)
                 .orderBy('timestamp', 'asc')
                 .onSnapshot(
-                    snapshot => processMessages(snapshot, false),
+                    snapshot => processMessages(snapshot),
                     error => console.error('Query 2 error:', error)
                 );
 

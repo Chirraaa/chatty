@@ -1,22 +1,42 @@
 // polyfills.js
 // CRITICAL: This MUST be the first import in your app
-import 'react-native-get-random-values';
 
 // FIRST: Set up global scope
 if (typeof global === 'undefined') {
   global = window;
 }
 
-// SECOND: Ensure crypto object exists with getRandomValues BEFORE anything else
+// Use expo-crypto for React Native, fallback to native crypto for web
+let getRandomValuesImpl;
+
+if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+  // Web environment - use native crypto
+  getRandomValuesImpl = window.crypto.getRandomValues.bind(window.crypto);
+  console.log('🌐 Using native browser crypto');
+} else {
+  // React Native environment - use expo-crypto
+  try {
+    const expoCrypto = require('expo-crypto');
+    getRandomValuesImpl = (array) => {
+      // expo-crypto.getRandomBytes returns a Uint8Array
+      const randomBytes = expoCrypto.getRandomBytes(array.length);
+      array.set(randomBytes);
+      return array;
+    };
+    console.log('📱 Using expo-crypto');
+  } catch (e) {
+    console.error('❌ Failed to load expo-crypto:', e);
+    throw new Error('No random number generator available. Install expo-crypto: npx expo install expo-crypto');
+  }
+}
+
+// SECOND: Ensure crypto object exists with getRandomValues
 if (!global.crypto) {
   global.crypto = {};
 }
 
-// Get the actual getRandomValues function
-const getRandomValues = global.crypto.getRandomValues || require('react-native-get-random-values').getRandomValues;
-
 if (!global.crypto.getRandomValues) {
-  global.crypto.getRandomValues = getRandomValues;
+  global.crypto.getRandomValues = getRandomValuesImpl;
 }
 
 // Also ensure it's on window for web compatibility
@@ -25,15 +45,14 @@ if (typeof window !== 'undefined') {
     window.crypto = {};
   }
   if (!window.crypto.getRandomValues) {
-    window.crypto.getRandomValues = getRandomValues;
+    window.crypto.getRandomValues = getRandomValuesImpl;
   }
 }
 
 // THIRD: Create a direct randomBytes implementation for tweetnacl
-// This is what tweetnacl actually calls
 global.crypto.randomBytes = function(length) {
   const bytes = new Uint8Array(length);
-  getRandomValues(bytes);
+  getRandomValuesImpl(bytes);
   return bytes;
 };
 
@@ -46,8 +65,6 @@ console.log('🔐 Crypto setup:');
 console.log('  - crypto object exists:', !!global.crypto);
 console.log('  - getRandomValues exists:', typeof global.crypto?.getRandomValues === 'function');
 console.log('  - randomBytes exists:', typeof global.crypto?.randomBytes === 'function');
-
-
 
 // NOW load Buffer and other polyfills
 const BufferModule = require('buffer');
