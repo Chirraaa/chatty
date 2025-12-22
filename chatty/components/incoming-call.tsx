@@ -27,24 +27,44 @@ export function IncomingCallListener() {
       .collection('calls')
       .where('receiverId', '==', currentUser.uid)
       .where('status', '==', 'calling')
-      .onSnapshot(async (snapshot) => {
-        for (const change of snapshot.docChanges()) {
-          if (change.type === 'added') {
-            const callData = change.doc.data();
-            
-            // Get caller info
-            const callerProfile = await authService.getUserProfile(callData.callerId);
-            const customNickname = await authService.getCustomNickname(callData.callerId);
-            
-            setIncomingCall({
-              callId: change.doc.id,
-              callerId: callData.callerId,
-              callerName: customNickname || callerProfile?.username || 'Unknown',
-              isVideo: callData.isVideo,
-            });
+      .onSnapshot(
+        async (snapshot) => {
+          // Check if snapshot is null or invalid
+          if (!snapshot) {
+            console.warn('⚠️ Received null snapshot in incoming call listener');
+            return;
+          }
+
+          try {
+            for (const change of snapshot.docChanges()) {
+              if (change.type === 'added') {
+                const callData = change.doc.data();
+                
+                // Get caller info
+                const callerProfile = await authService.getUserProfile(callData.callerId);
+                const customNickname = await authService.getCustomNickname(callData.callerId);
+                
+                setIncomingCall({
+                  callId: change.doc.id,
+                  callerId: callData.callerId,
+                  callerName: customNickname || callerProfile?.username || 'Unknown',
+                  isVideo: callData.isVideo,
+                });
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error processing incoming call:', error);
+          }
+        },
+        (error) => {
+          console.error('❌ Error in incoming call listener:', error);
+          
+          // Provide helpful error message
+          if (error.code === 'permission-denied') {
+            console.error('💡 Permission denied: Check your Firestore security rules');
           }
         }
-      });
+      );
 
     return unsubscribe;
   }, []);

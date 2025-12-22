@@ -2,20 +2,59 @@
 // CRITICAL: This MUST be the first import in your app
 import 'react-native-get-random-values';
 
-// Get the Buffer module
-const BufferModule = require('buffer');
-const Buffer = BufferModule.Buffer;
-const SlowBuffer = BufferModule.SlowBuffer || Buffer;
-
-// Polyfill global scope
+// FIRST: Set up global scope
 if (typeof global === 'undefined') {
   global = window;
 }
 
-// Monkey-patch Buffer encoding support BEFORE anything else
-const encodingOps = require('buffer').INSPECT_MAX_BYTES;
+// SECOND: Ensure crypto object exists with getRandomValues BEFORE anything else
+if (!global.crypto) {
+  global.crypto = {};
+}
 
-// Override internal encoding operations
+// Get the actual getRandomValues function
+const getRandomValues = global.crypto.getRandomValues || require('react-native-get-random-values').getRandomValues;
+
+if (!global.crypto.getRandomValues) {
+  global.crypto.getRandomValues = getRandomValues;
+}
+
+// Also ensure it's on window for web compatibility
+if (typeof window !== 'undefined') {
+  if (!window.crypto) {
+    window.crypto = {};
+  }
+  if (!window.crypto.getRandomValues) {
+    window.crypto.getRandomValues = getRandomValues;
+  }
+}
+
+// THIRD: Create a direct randomBytes implementation for tweetnacl
+// This is what tweetnacl actually calls
+global.crypto.randomBytes = function(length) {
+  const bytes = new Uint8Array(length);
+  getRandomValues(bytes);
+  return bytes;
+};
+
+// Also add it to window
+if (typeof window !== 'undefined') {
+  window.crypto.randomBytes = global.crypto.randomBytes;
+}
+
+console.log('🔐 Crypto setup:');
+console.log('  - crypto object exists:', !!global.crypto);
+console.log('  - getRandomValues exists:', typeof global.crypto?.getRandomValues === 'function');
+console.log('  - randomBytes exists:', typeof global.crypto?.randomBytes === 'function');
+
+
+
+// NOW load Buffer and other polyfills
+const BufferModule = require('buffer');
+const Buffer = BufferModule.Buffer;
+const SlowBuffer = BufferModule.SlowBuffer || Buffer;
+
+// Monkey-patch Buffer encoding support
 const originalIsEncoding = Buffer.isEncoding;
 Buffer.isEncoding = function(encoding) {
   const enc = String(encoding).toLowerCase().replace(/[-_]/g, '');
@@ -29,7 +68,6 @@ Buffer.isEncoding = function(encoding) {
 const OriginalBuffer = Buffer;
 function PatchedBuffer(arg, encodingOrOffset, length) {
   if (typeof arg === 'string' && (encodingOrOffset === 'utf-16le' || encodingOrOffset === 'utf16le')) {
-    // Convert string to utf-16le manually
     const buf = OriginalBuffer.allocUnsafe(arg.length * 2);
     for (let i = 0; i < arg.length; i++) {
       const code = arg.charCodeAt(i);
@@ -100,7 +138,6 @@ OriginalBuffer.prototype.write = function(string, offset, length, encoding) {
 global.Buffer = PatchedBuffer;
 BufferModule.Buffer = PatchedBuffer;
 
-// Also patch SlowBuffer
 if (SlowBuffer) {
   global.SlowBuffer = PatchedBuffer;
   BufferModule.SlowBuffer = PatchedBuffer;
@@ -137,7 +174,7 @@ if (!global.stream) {
   global.stream = require('readable-stream');
 }
 
-console.log('✅ Polyfills loaded with deep UTF-16LE encoding support');
+console.log('✅ All polyfills loaded successfully');
 console.log('✅ Buffer.isEncoding("utf-16le"):', PatchedBuffer.isEncoding('utf-16le'));
 
 export { PatchedBuffer as Buffer };
