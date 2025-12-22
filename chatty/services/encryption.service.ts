@@ -7,6 +7,10 @@ import {
   SignalProtocolAddress,
 } from '@privacyresearch/libsignal-protocol-typescript';
 
+import 'text-encoding';
+import { Buffer } from 'buffer';
+global.Buffer = global.Buffer || Buffer;
+
 class EncryptionService {
   private store: SignalProtocolStore | null = null;
   private initialized = false;

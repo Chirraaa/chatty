@@ -1,11 +1,11 @@
 // app/(tabs)/chat.tsx
 import { useState, useEffect } from 'react';
 import { View, TextInput, FlatList, TouchableOpacity, Text } from 'react-native';
-import messageService from '@/services/message.service';
-import { auth } from '@/config/fierbase';
+import messageService, { Message } from '@/services/message.service';
+import { auth } from '@/config/firebase';
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const otherUserId = 'OTHER_USER_ID'; // Get from navigation or state
 
@@ -16,7 +16,7 @@ export default function ChatScreen() {
 
   const sendMessage = async () => {
     if (!inputText.trim()) return;
-    await messageService.sendTextMessage(otherUserId, inputText); // ✅ FIXED METHOD NAME
+    await messageService.sendTextMessage(otherUserId, inputText);
     setInputText('');
   };
 
@@ -25,6 +25,7 @@ export default function ChatScreen() {
       <FlatList
         data={messages}
         className="flex-1 px-4"
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View className={`my-2 p-3 rounded-2xl max-w-[80%] ${
             item.senderId === auth().currentUser?.uid 
