@@ -1,13 +1,17 @@
 // app/(tabs)/profile.tsx
-import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useContext } from 'react';
+import { StyleSheet, ScrollView, View, Alert, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
+import { Layout, Text, Button, Card, Divider } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import authService from '@/services/auth.service';
 import { auth } from '@/config/firebase';
+import { ThemeContext } from '../_layout';
 
 export default function ProfileScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
+  const themeContext = useContext(ThemeContext);
+  const currentUser = auth().currentUser;
 
   useEffect(() => {
     loadProfile();
@@ -15,7 +19,6 @@ export default function ProfileScreen() {
 
   const loadProfile = async () => {
     try {
-      const currentUser = auth().currentUser;
       if (currentUser) {
         const profile = await authService.getUserProfile(currentUser.uid);
         setUserProfile(profile);
@@ -51,94 +54,174 @@ export default function ProfileScreen() {
     );
   };
 
-  const currentUser = auth().currentUser;
-
   return (
-    <ScrollView className="flex-1 bg-white dark:bg-gray-900">
-      {/* Header */}
-      <View className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <Text className="text-2xl font-bold text-gray-900 dark:text-white">
-          Profile
-        </Text>
-      </View>
+    <Layout style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text category='h4'>Profile</Text>
+        </View>
 
-      {/* Profile Info */}
-      <View className="p-6 items-center">
-        {/* Avatar */}
-        <View className="w-24 h-24 bg-blue-500 rounded-full items-center justify-center mb-4">
-          <Text className="text-white text-4xl font-bold">
-            {userProfile?.username?.charAt(0).toUpperCase() || '?'}
+        {/* Profile Info */}
+        <View style={styles.profileSection}>
+          <View style={styles.avatar}>
+            <Text category='h1' style={styles.avatarText}>
+              {userProfile?.username?.charAt(0).toUpperCase() || '?'}
+            </Text>
+          </View>
+
+          <Text category='h5' style={styles.username}>
+            {userProfile?.username || 'Loading...'}
+          </Text>
+
+          <Text category='s1' appearance='hint'>
+            {currentUser?.email}
           </Text>
         </View>
 
-        {/* Username */}
-        <Text className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-          {userProfile?.username || 'Loading...'}
-        </Text>
-
-        {/* Email */}
-        <Text className="text-gray-600 dark:text-gray-400 text-base">
-          {currentUser?.email}
-        </Text>
-      </View>
-
-      {/* Settings Section */}
-      <View className="px-4 mt-4">
-        <Text className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3 px-2">
-          SETTINGS
-        </Text>
-
-        {/* Account Info */}
-        <View className="bg-gray-50 dark:bg-gray-800 rounded-xl overflow-hidden">
-          <View className="flex-row items-center p-4 border-b border-gray-200 dark:border-gray-700">
-            <Ionicons name="person-circle-outline" size={24} color="#6B7280" />
-            <View className="ml-3 flex-1">
-              <Text className="text-gray-900 dark:text-white font-medium">
-                User ID
-              </Text>
-              <Text className="text-gray-600 dark:text-gray-400 text-sm">
+        {/* Account Info Card */}
+        <Card style={styles.card}>
+          <Text category='h6' style={styles.cardTitle}>Account Information</Text>
+          
+          <View style={styles.infoRow}>
+            <Ionicons name="person-circle-outline" size={24} color="#3366FF" />
+            <View style={styles.infoContent}>
+              <Text category='s2'>User ID</Text>
+              <Text appearance='hint' numberOfLines={1}>
                 {currentUser?.uid.substring(0, 20)}...
               </Text>
             </View>
           </View>
 
-          <View className="flex-row items-center p-4">
-            <Ionicons name="shield-checkmark-outline" size={24} color="#10B981" />
-            <View className="ml-3 flex-1">
-              <Text className="text-gray-900 dark:text-white font-medium">
-                Encryption
-              </Text>
-              <Text className="text-green-600 dark:text-green-400 text-sm">
-                End-to-end encrypted
-              </Text>
+          <Divider style={styles.divider} />
+
+          <View style={styles.infoRow}>
+            <Ionicons name="shield-checkmark-outline" size={24} color="#00D68F" />
+            <View style={styles.infoContent}>
+              <Text category='s2'>Encryption</Text>
+              <Text style={styles.encryptionText}>End-to-end encrypted</Text>
             </View>
           </View>
-        </View>
+        </Card>
 
-        {/* About Section */}
-        <Text className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3 px-2 mt-6">
-          ABOUT
-        </Text>
+        {/* Appearance Card */}
+        <Card style={styles.card}>
+          <Text category='h6' style={styles.cardTitle}>Appearance</Text>
+          
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text category='s1'>Dark Mode</Text>
+              <Text appearance='hint' style={styles.settingDescription}>
+                Current theme: {themeContext.theme === 'light' ? 'Light' : 'Dark'}
+              </Text>
+            </View>
+            <TouchableOpacity 
+              onPress={themeContext.toggleTheme}
+              style={styles.themeToggle}
+            >
+              <Ionicons 
+                name={themeContext.theme === 'light' ? 'moon-outline' : 'sunny-outline'} 
+                size={24} 
+                color="#3366FF" 
+              />
+            </TouchableOpacity>
+          </View>
+        </Card>
 
-        <View className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
-          <Text className="text-gray-600 dark:text-gray-400 text-sm leading-5">
-            This app uses Signal Protocol for end-to-end encryption. Your messages
-            are encrypted on your device and can only be decrypted by the recipient.
+        {/* About Card */}
+        <Card style={styles.card}>
+          <Text category='h6' style={styles.cardTitle}>About</Text>
+          <Text appearance='hint' style={styles.aboutText}>
+            This app uses end-to-end encryption. Your messages are encrypted on 
+            your device and can only be decrypted by the recipient.
           </Text>
-        </View>
+        </Card>
 
         {/* Sign Out Button */}
-        <TouchableOpacity
-          className="bg-red-500 rounded-xl py-4 mt-8"
+        <Button
+          style={styles.signOutButton}
+          status='danger'
           onPress={handleSignOut}
         >
-          <Text className="text-white text-center font-semibold text-base">
-            Sign Out
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View className="h-8" />
-    </ScrollView>
+          Sign Out
+        </Button>
+      </ScrollView>
+    </Layout>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  header: {
+    padding: 16,
+    paddingTop: 0,
+  },
+  profileSection: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  avatar: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#3366FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 40,
+  },
+  username: {
+    marginBottom: 4,
+  },
+  card: {
+    marginVertical: 8,
+  },
+  cardTitle: {
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  infoContent: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  divider: {
+    marginVertical: 12,
+  },
+  encryptionText: {
+    color: '#00D68F',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settingInfo: {
+    flex: 1,
+  },
+  settingDescription: {
+    marginTop: 4,
+    fontSize: 12,
+  },
+  themeToggle: {
+    padding: 8,
+  },
+  aboutText: {
+    lineHeight: 20,
+  },
+  signOutButton: {
+    marginTop: 16,
+    marginBottom: 32,
+  },
+});

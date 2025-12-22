@@ -1,60 +1,121 @@
 // app/_layout.tsx
-import '../polyfills';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+// CRITICAL: These imports MUST be in this order
+import 'react-native-get-random-values'; // 1. Random number generator FIRST
+import '../polyfills'; // 2. Then other polyfills
+
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import 'react-native-reanimated';
+import { useEffect, useState, createContext } from 'react';
+import { View, ActivityIndicator } from 'react-native';
+import * as eva from '@eva-design/eva';
+import { ApplicationProvider, Layout, Text } from '@ui-kitten/components';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { auth } from '@/config/firebase';
 import encryptionService from '@/services/encryption.service';
 import { IncomingCallListener } from '@/components/incoming-call';
+
+export const ThemeContext = createContext({
+  theme: 'light',
+  toggleTheme: () => {},
+});
 
 export const unstable_settings = {
   initialRouteName: '(auth)',
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const [theme, setTheme] = useState('light');
   const [isReady, setIsReady] = useState(false);
+  const [initialRoute, setInitialRoute] = useState<string | null>(null);
 
   useEffect(() => {
-    // Listen for auth state changes
-    const unsubscribe = auth().onAuthStateChanged(async (user: any) => {
-      if (user) {
-        // User is signed in, initialize encryption
-        try {
-          await encryptionService.initialize(user.uid);
-          router.replace('/(tabs)');
-        } catch (error) {
-          console.error('Error initializing encryption:', error);
+    // Load saved theme
+    const loadTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem('app-theme');
+        if (savedTheme) {
+          setTheme(savedTheme);
         }
-      } else {
-        // User is signed out
-        router.replace('/(auth)/login');
+      } catch (error) {
+        console.error('Failed to load theme', error);
       }
-      setIsReady(true);
-    });
-
-    return unsubscribe;
+    };
+    loadTheme();
   }, []);
 
+  useEffect(() => {
+    console.log('🔍 Setting up auth listener...');
+    
+    const unsubscribe = auth().onAuthStateChanged(async (user: any) => {
+      console.log('🔍 Auth state changed:', user ? `User: ${user.uid}` : 'No user');
+      
+      try {
+        if (user) {
+          console.log('🔐 Initializing encryption...');
+          await encryptionService.initialize(user.uid);
+          console.log('✅ Encryption initialized');
+          setInitialRoute('/(tabs)');
+        } else {
+          console.log('👤 No user, going to login');
+          setInitialRoute('/(auth)/login');
+        }
+      } catch (error) {
+        console.error('❌ Error in auth handler:', error);
+        setInitialRoute(user ? '/(tabs)' : '/(auth)/login');
+      } finally {
+        setIsReady(true);
+      }
+    });
+
+    return () => {
+      console.log('🧹 Cleaning up auth listener');
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isReady && initialRoute) {
+      console.log('🚀 Navigating to:', initialRoute);
+      setTimeout(() => {
+        router.replace(initialRoute as any);
+      }, 100);
+    }
+  }, [isReady, initialRoute]);
+
+  const toggleTheme = async () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    try {
+      await AsyncStorage.setItem('app-theme', nextTheme);
+    } catch (error) {
+      console.error('Failed to save theme', error);
+    }
+  };
+
   if (!isReady) {
-    return null; // Or a loading screen
+    return (
+      <ApplicationProvider {...eva} theme={theme === 'light' ? eva.light : eva.dark}>
+        <Layout style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#3366FF" />
+          <Text category="s1" style={{ marginTop: 16 }}>Loading...</Text>
+        </Layout>
+      </ApplicationProvider>
+    );
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="chat/[userId]" />
-        <Stack.Screen name="call/[callId]" />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-      <IncomingCallListener />
-    </ThemeProvider>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      <ApplicationProvider {...eva} theme={theme === 'light' ? eva.light : eva.dark}>
+        <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="chat/[userId]" />
+          <Stack.Screen name="call/[callId]" />
+        </Stack>
+        <IncomingCallListener />
+      </ApplicationProvider>
+    </ThemeContext.Provider>
   );
 }

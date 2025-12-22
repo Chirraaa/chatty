@@ -1,17 +1,8 @@
 // app/(auth)/signup.tsx
 import { useState } from 'react';
-import {
-  View,
-  TextInput,
-  TouchableOpacity,
-  Text,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
+import { StyleSheet, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
 import { Link, router } from 'expo-router';
+import { Layout, Text, Input, Button } from '@ui-kitten/components';
 import authService from '@/services/auth.service';
 
 export default function SignupScreen() {
@@ -22,7 +13,6 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    // Validation
     if (!username.trim() || !email.trim() || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -78,125 +68,111 @@ export default function SignupScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-white dark:bg-gray-900"
+      style={{ flex: 1 }}
     >
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View className="flex-1 justify-center px-8 py-12">
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+        <Layout style={styles.container}>
           {/* Header */}
-          <View className="mb-8">
-            <Text className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-              Create Account
-            </Text>
-            <Text className="text-gray-600 dark:text-gray-400 text-base">
-              Join with end-to-end encryption
-            </Text>
-          </View>
+          <Layout style={styles.header}>
+            <Text category='h1' style={styles.title}>Create Account</Text>
+            <Text category='s1' appearance='hint'>Join with end-to-end encryption</Text>
+          </Layout>
 
           {/* Form */}
-          <View className="space-y-4">
-            {/* Username Input */}
-            <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Username
-              </Text>
-              <TextInput
-                className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-3 text-black dark:text-white text-base"
-                placeholder="Choose a username"
-                placeholderTextColor="#9CA3AF"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                editable={!loading}
-              />
-            </View>
+          <Layout style={styles.form}>
+            <Input
+              style={styles.input}
+              label='Username'
+              placeholder='Choose a username'
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize='none'
+              disabled={loading}
+            />
 
-            {/* Email Input */}
-            <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Email
-              </Text>
-              <TextInput
-                className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-3 text-black dark:text-white text-base"
-                placeholder="your@email.com"
-                placeholderTextColor="#9CA3AF"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                editable={!loading}
-              />
-            </View>
+            <Input
+              style={styles.input}
+              label='Email'
+              placeholder='your@email.com'
+              value={email}
+              onChangeText={setEmail}
+              keyboardType='email-address'
+              autoCapitalize='none'
+              autoComplete='email'
+              disabled={loading}
+            />
 
-            {/* Password Input */}
-            <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Password
-              </Text>
-              <TextInput
-                className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-3 text-black dark:text-white text-base"
-                placeholder="At least 6 characters"
-                placeholderTextColor="#9CA3AF"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoComplete="password-new"
-                editable={!loading}
-              />
-            </View>
+            <Input
+              style={styles.input}
+              label='Password'
+              placeholder='At least 6 characters'
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete='password-new'
+              disabled={loading}
+            />
 
-            {/* Confirm Password Input */}
-            <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Confirm Password
-              </Text>
-              <TextInput
-                className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-3 text-black dark:text-white text-base"
-                placeholder="Re-enter password"
-                placeholderTextColor="#9CA3AF"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                autoComplete="password-new"
-                editable={!loading}
-              />
-            </View>
+            <Input
+              style={styles.input}
+              label='Confirm Password'
+              placeholder='Re-enter password'
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+              autoComplete='password-new'
+              disabled={loading}
+            />
 
-            {/* Signup Button */}
-            <TouchableOpacity
-              className={`rounded-xl py-4 mt-6 ${
-                loading ? 'bg-blue-400' : 'bg-blue-500'
-              }`}
+            <Button
+              style={styles.button}
               onPress={handleSignup}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-white text-center font-semibold text-base">
-                  Create Account
-                </Text>
-              )}
-            </TouchableOpacity>
+              {loading ? 'Creating Account...' : 'Create Account'}
+            </Button>
 
-            {/* Login Link */}
-            <View className="flex-row justify-center mt-6">
-              <Text className="text-gray-600 dark:text-gray-400">
-                Already have an account?{' '}
-              </Text>
+            <Layout style={styles.linkContainer}>
+              <Text appearance='hint'>Already have an account? </Text>
               <Link href="/(auth)/login" asChild>
-                <TouchableOpacity disabled={loading}>
-                  <Text className="text-blue-500 font-semibold">Sign In</Text>
-                </TouchableOpacity>
+                <Text status='primary' style={styles.link}>Sign In</Text>
               </Link>
-            </View>
-          </View>
-        </View>
+            </Layout>
+          </Layout>
+        </Layout>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  header: {
+    marginBottom: 32,
+  },
+  title: {
+    marginBottom: 8,
+  },
+  form: {
+    width: '100%',
+  },
+  input: {
+    marginBottom: 16,
+  },
+  button: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  linkContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  link: {
+    fontWeight: '600',
+  },
+});

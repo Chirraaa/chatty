@@ -1,16 +1,8 @@
 // app/(auth)/login.tsx
 import { useState } from 'react';
-import {
-  View,
-  TextInput,
-  TouchableOpacity,
-  Text,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import { StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { Link, router } from 'expo-router';
+import { Layout, Text, Input, Button } from '@ui-kitten/components';
 import authService from '@/services/auth.service';
 
 export default function LoginScreen() {
@@ -27,7 +19,6 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await authService.signIn(email.trim(), password);
-      // Navigation will be handled by root layout
       router.replace('/(tabs)');
     } catch (error: any) {
       console.error('Login error:', error);
@@ -50,86 +41,88 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-white dark:bg-gray-900"
+      style={{ flex: 1 }}
     >
-      <View className="flex-1 justify-center px-8">
+      <Layout style={styles.container}>
         {/* Header */}
-        <View className="mb-12">
-          <Text className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            Welcome Back
-          </Text>
-          <Text className="text-gray-600 dark:text-gray-400 text-base">
-            Sign in to continue
-          </Text>
-        </View>
+        <Layout style={styles.header}>
+          <Text category='h1' style={styles.title}>Welcome Back</Text>
+          <Text category='s1' appearance='hint'>Sign in to continue</Text>
+        </Layout>
 
         {/* Form */}
-        <View className="space-y-4">
-          {/* Email Input */}
-          <View>
-            <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email
-            </Text>
-            <TextInput
-              className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-3 text-black dark:text-white text-base"
-              placeholder="your@email.com"
-              placeholderTextColor="#9CA3AF"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-              editable={!loading}
-            />
-          </View>
+        <Layout style={styles.form}>
+          <Input
+            style={styles.input}
+            label='Email'
+            placeholder='your@email.com'
+            value={email}
+            onChangeText={setEmail}
+            keyboardType='email-address'
+            autoCapitalize='none'
+            autoComplete='email'
+            disabled={loading}
+          />
 
-          {/* Password Input */}
-          <View>
-            <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Password
-            </Text>
-            <TextInput
-              className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-3 text-black dark:text-white text-base"
-              placeholder="••••••••"
-              placeholderTextColor="#9CA3AF"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password"
-              editable={!loading}
-            />
-          </View>
+          <Input
+            style={styles.input}
+            label='Password'
+            placeholder='••••••••'
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete='password'
+            disabled={loading}
+          />
 
-          {/* Login Button */}
-          <TouchableOpacity
-            className={`rounded-xl py-4 mt-6 ${
-              loading ? 'bg-blue-400' : 'bg-blue-500'
-            }`}
+          <Button
+            style={styles.button}
             onPress={handleLogin}
             disabled={loading}
           >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text className="text-white text-center font-semibold text-base">
-                Sign In
-              </Text>
-            )}
-          </TouchableOpacity>
+            {loading ? 'Signing In...' : 'Sign In'}
+          </Button>
 
-          {/* Sign Up Link */}
-          <View className="flex-row justify-center mt-6">
-            <Text className="text-gray-600 dark:text-gray-400">
-              Don't have an account?{' '}
-            </Text>
+          <Layout style={styles.linkContainer}>
+            <Text appearance='hint'>Don't have an account? </Text>
             <Link href="/(auth)/signup" asChild>
-              <TouchableOpacity disabled={loading}>
-                <Text className="text-blue-500 font-semibold">Sign Up</Text>
-              </TouchableOpacity>
+              <Text status='primary' style={styles.link}>Sign Up</Text>
             </Link>
-          </View>
-        </View>
-      </View>
+          </Layout>
+        </Layout>
+      </Layout>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  header: {
+    marginBottom: 32,
+  },
+  title: {
+    marginBottom: 8,
+  },
+  form: {
+    width: '100%',
+  },
+  input: {
+    marginBottom: 16,
+  },
+  button: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  linkContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  link: {
+    fontWeight: '600',
+  },
+});
