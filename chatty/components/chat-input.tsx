@@ -1,6 +1,7 @@
 // components/chat-input.tsx
 import { useState } from 'react';
-import { View, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Alert } from 'react-native';
+import { Input, Button, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import messageService from '@/services/message.service';
 import imageService from '@/services/image.service';
@@ -49,48 +50,72 @@ export function ChatInput({ receiverId, onSendComplete }: ChatInputProps) {
     }
   };
 
+  const ImageIcon = (props: any) => (
+    <Ionicons name="image-outline" size={20} color={sending ? '#8F9BB3' : '#3366FF'} />
+  );
+
+  const SendIcon = (props: any) => (
+    sending ? (
+      <Spinner size='small' status='control' />
+    ) : (
+      <Ionicons name="send" size={20} color="white" />
+    )
+  );
+
   return (
-    <View className="flex-row items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      {/* Image Button */}
-      <TouchableOpacity
+    <View style={styles.container}>
+      <Button
+        appearance='ghost'
+        size='small'
+        accessoryLeft={ImageIcon}
         onPress={handleSendImage}
         disabled={sending}
-        className="mr-2 p-2"
-      >
-        <Ionicons 
-          name="image" 
-          size={24} 
-          color={sending ? '#9CA3AF' : '#3B82F6'} 
-        />
-      </TouchableOpacity>
+        style={styles.imageButton}
+      />
 
-      {/* Text Input */}
-      <TextInput
-        className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 text-black dark:text-white"
+      <Input
+        style={styles.input}
         placeholder="Type a message..."
-        placeholderTextColor="#9CA3AF"
         value={inputText}
         onChangeText={setInputText}
         multiline
-        maxLength={5000}
-        editable={!sending}
+        textStyle={styles.inputText}
+        disabled={sending}
         onSubmitEditing={handleSendText}
       />
 
-      {/* Send Button */}
-      <TouchableOpacity
+      <Button
+        size='small'
+        accessoryLeft={SendIcon}
         onPress={handleSendText}
         disabled={!inputText.trim() || sending}
-        className={`ml-2 p-3 rounded-full ${
-          inputText.trim() && !sending ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-700'
-        }`}
-      >
-        {sending ? (
-          <ActivityIndicator size="small" color="white" />
-        ) : (
-          <Ionicons name="send" size={20} color="white" />
-        )}
-      </TouchableOpacity>
+        style={styles.sendButton}
+      />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EDF1F7',
+  },
+  imageButton: {
+    marginRight: 8,
+  },
+  input: {
+    flex: 1,
+    marginRight: 8,
+  },
+  inputText: {
+    minHeight: 20,
+    maxHeight: 100,
+  },
+  sendButton: {
+    borderRadius: 20,
+    paddingHorizontal: 12,
+  },
+});

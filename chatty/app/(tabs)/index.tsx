@@ -1,11 +1,12 @@
 // app/(tabs)/index.tsx
 import { useState, useEffect } from 'react';
-import { View, FlatList, TouchableOpacity, Text } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { Layout, Text, List, ListItem, Spinner } from '@ui-kitten/components';
+import { Ionicons } from '@expo/vector-icons';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
-import { Ionicons } from '@expo/vector-icons';
 
 interface ChatPreview {
   userId: string;
@@ -29,18 +30,15 @@ export default function ChatsListScreen() {
       const currentUser = auth().currentUser;
       if (!currentUser) return;
 
-      // Get all messages involving current user
+      // Simple approach: Get all messages without complex ordering
       const unsubscribe = firestore()
         .collection('messages')
         .where('senderId', '==', currentUser.uid)
-        .orderBy('timestamp', 'desc')
-        .limit(50)
         .onSnapshot(async (snapshot) => {
+          // Also get messages where current user is receiver
           const receiverSnapshot = await firestore()
             .collection('messages')
             .where('receiverId', '==', currentUser.uid)
-            .orderBy('timestamp', 'desc')
-            .limit(50)
             .get();
 
           // Combine both queries
@@ -69,7 +67,7 @@ export default function ChatsListScreen() {
                 userId,
                 username: profile.username,
                 customNickname: customNickname || undefined,
-                unreadCount: 0, // TODO: Implement unread counter
+                unreadCount: 0,
               });
             }
           }
@@ -89,67 +87,114 @@ export default function ChatsListScreen() {
     router.push(`/chat/${userId}`);
   };
 
+  const renderAvatar = (item: ChatPreview) => (
+    <View style={styles.avatar}>
+      <Text category='h6' style={styles.avatarText}>
+        {(item.customNickname || item.username).charAt(0).toUpperCase()}
+      </Text>
+    </View>
+  );
+
+  const renderAccessory = () => (
+    <Ionicons name="chevron-forward" size={20} color="#8F9BB3" />
+  );
+
+  const renderItem = ({ item }: { item: ChatPreview }) => (
+    <ListItem
+      title={item.customNickname || item.username}
+      description={item.customNickname ? `@${item.username}` : undefined}
+      accessoryLeft={() => renderAvatar(item)}
+      accessoryRight={renderAccessory}
+      onPress={() => handleChatPress(item.userId)}
+    />
+  );
+
+  const renderEmptyComponent = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="chatbubbles-outline" size={64} color="#8F9BB3" />
+      <Text category='s1' appearance='hint' style={styles.emptyText}>
+        No conversations yet
+      </Text>
+      <Text category='c1' appearance='hint' style={styles.emptySubtext}>
+        Go to Contacts to find someone to chat with
+      </Text>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <Layout style={styles.container}>
+        <View style={styles.header}>
+          <Text category='h4'>Chats</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Spinner size='large' />
+        </View>
+      </Layout>
+    );
+  }
+
   return (
-    <View className="flex-1 bg-white dark:bg-gray-900">
+    <Layout style={styles.container}>
       {/* Header */}
-      <View className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <Text className="text-2xl font-bold text-gray-900 dark:text-white">
-          Chats
-        </Text>
+      <View style={styles.header}>
+        <Text category='h4'>Chats</Text>
       </View>
 
       {/* Chats List */}
       {chats.length > 0 ? (
-        <FlatList
+        <List
           data={chats}
+          renderItem={renderItem}
           keyExtractor={(item) => item.userId}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              className="flex-row items-center p-4 border-b border-gray-200 dark:border-gray-700"
-              onPress={() => handleChatPress(item.userId)}
-            >
-              {/* Avatar */}
-              <View className="w-14 h-14 bg-blue-500 rounded-full items-center justify-center mr-3">
-                <Text className="text-white text-xl font-bold">
-                  {(item.customNickname || item.username).charAt(0).toUpperCase()}
-                </Text>
-              </View>
-
-              {/* Chat Info */}
-              <View className="flex-1">
-                <View className="flex-row items-center justify-between mb-1">
-                  <Text className="text-base font-semibold text-gray-900 dark:text-white">
-                    {item.customNickname || item.username}
-                  </Text>
-                  {item.lastMessageTime && (
-                    <Text className="text-xs text-gray-500 dark:text-gray-400">
-                      {item.lastMessageTime.toLocaleDateString()}
-                    </Text>
-                  )}
-                </View>
-                {item.customNickname && (
-                  <Text className="text-sm text-gray-500 dark:text-gray-400">
-                    @{item.username}
-                  </Text>
-                )}
-              </View>
-
-              {/* Arrow */}
-              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
         />
       ) : (
-        <View className="flex-1 items-center justify-center px-8">
-          <Ionicons name="chatbubbles-outline" size={64} color="#9CA3AF" />
-          <Text className="text-gray-600 dark:text-gray-400 text-center mt-4 text-base">
-            No conversations yet
-          </Text>
-          <Text className="text-gray-500 dark:text-gray-500 text-center mt-2 text-sm">
-            Go to Contacts to find someone to chat with
-          </Text>
-        </View>
+        renderEmptyComponent()
       )}
-    </View>
+    </Layout>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    paddingTop: 20,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF1F7',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#3366FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  emptyText: {
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    marginTop: 8,
+    textAlign: 'center',
+  },
+});

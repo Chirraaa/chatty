@@ -9,18 +9,24 @@ class AuthService {
      */
     async signUp(email: string, password: string, username: string) {
         try {
+            console.log('🔐 Starting signup process...');
+            
             // Create Firebase auth user
             const userCredential = await auth().createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
+            console.log('✅ Firebase auth user created:', user.uid);
 
             // Initialize encryption for this user
+            console.log('🔐 Initializing encryption...');
             await encryptionService.initialize(user.uid);
 
             // Generate encryption keys
-            console.log('Generating encryption keys...');
+            console.log('🔑 Generating encryption keys...');
             const publicKeys = await encryptionService.generateKeys();
+            console.log('✅ Encryption keys generated');
 
             // Create user profile in Firestore with public key
+            console.log('💾 Creating user profile in Firestore...');
             await firestore().collection('users').doc(user.uid).set({
                 uid: user.uid,
                 email,
@@ -29,11 +35,20 @@ class AuthService {
                 createdAt: firestore.FieldValue.serverTimestamp(),
                 searchableUsername: username.toLowerCase(), // For search
             });
+            console.log('✅ User profile created successfully');
 
-            console.log('User created with encryption keys');
+            // Verify profile was created
+            const profileDoc = await firestore().collection('users').doc(user.uid).get();
+            if (profileDoc.exists) {
+                console.log('✅ Profile verification successful:', profileDoc.data());
+            } else {
+                console.error('❌ Profile verification failed - document does not exist!');
+                throw new Error('Failed to create user profile');
+            }
+
             return user;
         } catch (error) {
-            console.error('Signup error:', error);
+            console.error('❌ Signup error:', error);
             throw error;
         }
     }
@@ -43,14 +58,17 @@ class AuthService {
      */
     async signIn(email: string, password: string) {
         try {
+            console.log('🔐 Signing in...');
             const userCredential = await auth().signInWithEmailAndPassword(email, password);
 
             // Initialize encryption service with user's keys
+            console.log('🔐 Initializing encryption...');
             await encryptionService.initialize(userCredential.user.uid);
+            console.log('✅ Sign in successful');
 
             return userCredential.user;
         } catch (error) {
-            console.error('Sign in error:', error);
+            console.error('❌ Sign in error:', error);
             throw error;
         }
     }
@@ -60,9 +78,11 @@ class AuthService {
      */
     async signOut() {
         try {
+            console.log('👋 Signing out...');
             await auth().signOut();
+            console.log('✅ Signed out successfully');
         } catch (error) {
-            console.error('Sign out error:', error);
+            console.error('❌ Sign out error:', error);
             throw error;
         }
     }
@@ -95,7 +115,7 @@ class AuthService {
 
             await firestore().collection('users').doc(user.uid).update(updateData);
         } catch (error) {
-            console.error('Update profile error:', error);
+            console.error('❌ Update profile error:', error);
             throw error;
         }
     }
@@ -106,9 +126,13 @@ class AuthService {
     async getUserProfile(userId: string) {
         try {
             const doc = await firestore().collection('users').doc(userId).get();
-            return doc.exists ? doc.data() : null;
+            if (!doc.exists) {
+                console.warn(`⚠️ User profile not found for: ${userId}`);
+                return null;
+            }
+            return doc.data();
         } catch (error) {
-            console.error('Get user profile error:', error);
+            console.error('❌ Get user profile error:', error);
             throw error;
         }
     }
@@ -131,7 +155,7 @@ class AuthService {
                 ...doc.data(),
             }));
         } catch (error) {
-            console.error('Search users error:', error);
+            console.error('❌ Search users error:', error);
             throw error;
         }
     }
@@ -155,7 +179,7 @@ class AuthService {
                     updatedAt: firestore.FieldValue.serverTimestamp(),
                 });
         } catch (error) {
-            console.error('Set custom nickname error:', error);
+            console.error('❌ Set custom nickname error:', error);
             throw error;
         }
     }
@@ -177,7 +201,7 @@ class AuthService {
 
             return doc.exists ? doc.data()?.nickname : null;
         } catch (error) {
-            console.error('Get custom nickname error:', error);
+            console.error('❌ Get custom nickname error:', error);
             return null;
         }
     }

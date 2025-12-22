@@ -1,5 +1,6 @@
 // components/message-bubble.tsx
-import { View, Text, Image } from 'react-native';
+import { StyleSheet, View, Image } from 'react-native';
+import { Text, Card } from '@ui-kitten/components';
 import { auth } from '@/config/firebase';
 import { Message } from '@/services/message.service';
 
@@ -21,51 +22,106 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   return (
     <View
-      className={`mx-4 my-1 max-w-[80%] ${
-        isSentByMe ? 'self-end' : 'self-start'
-      }`}
+      style={[
+        styles.container,
+        isSentByMe ? styles.sentContainer : styles.receivedContainer,
+      ]}
     >
       {/* Message Content */}
       {message.type === 'text' && message.decryptedContent && (
-        <View
-          className={`p-3 rounded-2xl ${
-            isSentByMe
-              ? 'bg-blue-500 rounded-br-sm'
-              : 'bg-gray-200 dark:bg-gray-700 rounded-bl-sm'
-          }`}
+        <Card
+          style={[
+            styles.bubble,
+            isSentByMe ? styles.sentBubble : styles.receivedBubble,
+          ]}
         >
           <Text
-            className={`text-base ${
-              isSentByMe ? 'text-white' : 'text-black dark:text-white'
-            }`}
+            style={[
+              styles.messageText,
+              isSentByMe ? styles.sentText : styles.receivedText,
+            ]}
           >
             {message.decryptedContent}
           </Text>
-        </View>
+        </Card>
       )}
 
       {message.type === 'image' && message.decryptedImageUri && (
-        <View
-          className={`rounded-2xl overflow-hidden ${
-            isSentByMe ? 'rounded-br-sm' : 'rounded-bl-sm'
-          }`}
-        >
+        <Card style={styles.imageBubble}>
           <Image
             source={{ uri: message.decryptedImageUri }}
-            className="w-64 h-64"
+            style={styles.image}
             resizeMode="cover"
           />
-        </View>
+        </Card>
       )}
 
       {/* Timestamp */}
       <Text
-        className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${
-          isSentByMe ? 'text-right' : 'text-left'
-        }`}
+        category='c1'
+        appearance='hint'
+        style={[
+          styles.timestamp,
+          isSentByMe ? styles.sentTimestamp : styles.receivedTimestamp,
+        ]}
       >
         {formatTime(message.timestamp)}
       </Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    marginVertical: 4,
+    marginHorizontal: 16,
+    maxWidth: '80%',
+  },
+  sentContainer: {
+    alignSelf: 'flex-end',
+  },
+  receivedContainer: {
+    alignSelf: 'flex-start',
+  },
+  bubble: {
+    borderRadius: 16,
+  },
+  sentBubble: {
+    backgroundColor: '#3366FF',
+    borderBottomRightRadius: 4,
+  },
+  receivedBubble: {
+    backgroundColor: '#EDF1F7',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  sentText: {
+    color: '#FFFFFF',
+  },
+  receivedText: {
+    color: '#222B45',
+  },
+  imageBubble: {
+    padding: 0,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  image: {
+    width: 250,
+    height: 250,
+    borderRadius: 16,
+  },
+  timestamp: {
+    marginTop: 4,
+    fontSize: 11,
+  },
+  sentTimestamp: {
+    textAlign: 'right',
+  },
+  receivedTimestamp: {
+    textAlign: 'left',
+  },
+});

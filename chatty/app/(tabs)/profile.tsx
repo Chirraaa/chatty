@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { StyleSheet, ScrollView, View, Alert, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Layout, Text, Button, Card, Divider } from '@ui-kitten/components';
+import { Layout, Text, Button, Card, Divider, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import authService from '@/services/auth.service';
 import { auth } from '@/config/firebase';
@@ -10,6 +10,7 @@ import { ThemeContext } from '../_layout';
 
 export default function ProfileScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const themeContext = useContext(ThemeContext);
   const currentUser = auth().currentUser;
 
@@ -19,12 +20,22 @@ export default function ProfileScreen() {
 
   const loadProfile = async () => {
     try {
+      setLoading(true);
       if (currentUser) {
+        console.log('Loading profile for user:', currentUser.uid);
         const profile = await authService.getUserProfile(currentUser.uid);
+        console.log('Profile loaded:', profile);
         setUserProfile(profile);
+        
+        if (!profile) {
+          console.warn('Profile is null, user may not have completed registration');
+        }
       }
     } catch (error) {
       console.error('Error loading profile:', error);
+      Alert.alert('Error', 'Failed to load profile');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,6 +65,22 @@ export default function ProfileScreen() {
     );
   };
 
+  if (loading) {
+    return (
+      <Layout style={styles.container}>
+        <View style={styles.header}>
+          <Text category='h4'>Profile</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Spinner size='large' />
+          <Text category='s1' appearance='hint' style={styles.loadingText}>
+            Loading profile...
+          </Text>
+        </View>
+      </Layout>
+    );
+  }
+
   return (
     <Layout style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -66,12 +93,12 @@ export default function ProfileScreen() {
         <View style={styles.profileSection}>
           <View style={styles.avatar}>
             <Text category='h1' style={styles.avatarText}>
-              {userProfile?.username?.charAt(0).toUpperCase() || '?'}
+              {userProfile?.username?.charAt(0).toUpperCase() || currentUser?.email?.charAt(0).toUpperCase() || '?'}
             </Text>
           </View>
 
           <Text category='h5' style={styles.username}>
-            {userProfile?.username || 'Loading...'}
+            {userProfile?.username || 'No username set'}
           </Text>
 
           <Text category='s1' appearance='hint'>
@@ -158,8 +185,16 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   header: {
+    paddingTop: 20,
     padding: 16,
-    paddingTop: 0,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
   },
   profileSection: {
     alignItems: 'center',

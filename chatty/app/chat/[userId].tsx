@@ -1,16 +1,15 @@
 // app/chat/[userId].tsx
 import { useState, useEffect, useRef } from 'react';
 import {
-  View,
+  StyleSheet,
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  Text,
-  TouchableOpacity,
-  TextInput,
+  View,
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { Layout, Text, Input, Button, Modal, Card } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatInput } from '@/components/chat-input';
 import { MessageBubble } from '@/components/message-bubble';
@@ -93,115 +92,161 @@ export default function ChatScreen() {
 
   const displayName = customNickname || userProfile?.username || 'Chat';
 
+  const HeaderTitle = () => (
+    <Button
+      appearance='ghost'
+      size='small'
+      onPress={() => setEditingNickname(true)}
+      accessoryLeft={(props) => (
+        <View style={styles.headerTitleContent}>
+          <Text category='s1' style={styles.headerName}>{displayName}</Text>
+          {customNickname && (
+            <Text category='c1' appearance='hint'>@{userProfile?.username}</Text>
+          )}
+        </View>
+      )}
+    />
+  );
+
+  const HeaderRight = () => (
+    <View style={styles.headerActions}>
+      <Button
+        appearance='ghost'
+        size='small'
+        accessoryLeft={(props) => <Ionicons name="call" size={20} color="#3366FF" />}
+        onPress={handleVoiceCall}
+      />
+      <Button
+        appearance='ghost'
+        size='small'
+        accessoryLeft={(props) => <Ionicons name="videocam" size={20} color="#3366FF" />}
+        onPress={handleVideoCall}
+      />
+      <Button
+        appearance='ghost'
+        size='small'
+        accessoryLeft={(props) => <Ionicons name="create-outline" size={20} color="#3366FF" />}
+        onPress={() => setEditingNickname(true)}
+      />
+    </View>
+  );
+
   return (
     <>
       <Stack.Screen
         options={{
           headerShown: true,
-          title: '',
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} className="flex-row items-center">
-              <Ionicons name="chevron-back" size={24} color="#007AFF" />
-              <Text className="text-blue-500 text-base ml-1">Back</Text>
-            </TouchableOpacity>
-          ),
-          headerTitle: () => (
-            <TouchableOpacity
-              onPress={() => setEditingNickname(true)}
-              className="items-center"
-            >
-              <Text className="text-base font-semibold text-gray-900 dark:text-white">
-                {displayName}
-              </Text>
-              {customNickname && (
-                <Text className="text-xs text-gray-500 dark:text-gray-400">
-                  @{userProfile?.username}
-                </Text>
-              )}
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View className="flex-row gap-2">
-              <TouchableOpacity onPress={handleVoiceCall} className="p-2">
-                <Ionicons name="call" size={24} color="#007AFF" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleVideoCall} className="p-2">
-                <Ionicons name="videocam" size={24} color="#007AFF" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setEditingNickname(true)} className="p-2">
-                <Ionicons name="create-outline" size={24} color="#007AFF" />
-              </TouchableOpacity>
-            </View>
-          ),
+          title: displayName,
+          headerTitle: () => <HeaderTitle />,
+          headerRight: () => <HeaderRight />,
         }}
       />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1 bg-white dark:bg-gray-900"
+        style={styles.container}
         keyboardVerticalOffset={100}
       >
-        {/* Nickname Editor Modal */}
-        {editingNickname && (
-          <View className="absolute top-0 left-0 right-0 bottom-0 bg-black/50 z-50 items-center justify-center">
-            <View className="bg-white dark:bg-gray-800 rounded-2xl p-6 mx-8 w-80">
-              <Text className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+        <Layout style={styles.container}>
+          {/* Nickname Editor Modal */}
+          <Modal
+            visible={editingNickname}
+            backdropStyle={styles.backdrop}
+            onBackdropPress={() => setEditingNickname(false)}
+          >
+            <Card disabled={true} style={styles.modal}>
+              <Text category='h6' style={styles.modalTitle}>
                 Set Custom Nickname
               </Text>
               
-              <TextInput
-                className="bg-gray-100 dark:bg-gray-700 rounded-xl px-4 py-3 text-black dark:text-white mb-4"
+              <Input
                 placeholder="Enter nickname..."
-                placeholderTextColor="#9CA3AF"
                 value={nicknameInput}
                 onChangeText={setNicknameInput}
                 autoFocus
+                style={styles.nicknameInput}
               />
 
-              <View className="flex-row gap-3">
-                <TouchableOpacity
-                  className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-xl py-3"
+              <View style={styles.modalActions}>
+                <Button
+                  appearance='outline'
+                  status='basic'
+                  style={styles.modalButton}
                   onPress={() => {
                     setEditingNickname(false);
                     setNicknameInput(customNickname || userProfile?.username || '');
                   }}
                 >
-                  <Text className="text-center font-semibold text-gray-900 dark:text-white">
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
+                  Cancel
+                </Button>
                 
-                <TouchableOpacity
-                  className="flex-1 bg-blue-500 rounded-xl py-3"
+                <Button
+                  style={styles.modalButton}
                   onPress={handleSaveNickname}
                 >
-                  <Text className="text-center font-semibold text-white">
-                    Save
-                  </Text>
-                </TouchableOpacity>
+                  Save
+                </Button>
               </View>
-            </View>
-          </View>
-        )}
+            </Card>
+          </Modal>
 
-        {/* Messages */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <MessageBubble message={item} />}
-          contentContainerStyle={{ paddingVertical: 8 }}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
-        />
+          {/* Messages */}
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <MessageBubble message={item} />}
+            contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+          />
 
-        {/* Input */}
-        <ChatInput
-          receiverId={userId}
-          onSendComplete={() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }}
-        />
+          {/* Input */}
+          <ChatInput
+            receiverId={userId}
+            onSendComplete={() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }}
+          />
+        </Layout>
       </KeyboardAvoidingView>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  headerTitleContent: {
+    alignItems: 'center',
+  },
+  headerName: {
+    fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  messagesList: {
+    paddingVertical: 8,
+  },
+  backdrop: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modal: {
+    width: 320,
+  },
+  modalTitle: {
+    marginBottom: 16,
+  },
+  nicknameInput: {
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+  },
+});

@@ -122,6 +122,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     header: {
+        paddingTop: 20,
         padding: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#EDF1F7',

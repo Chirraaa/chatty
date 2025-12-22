@@ -1,7 +1,7 @@
 // app/(auth)/login.tsx
 import { useState } from 'react';
 import { StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
-import { Link, router } from 'expo-router';
+import { Link } from 'expo-router';
 import { Layout, Text, Input, Button } from '@ui-kitten/components';
 import authService from '@/services/auth.service';
 
@@ -19,7 +19,8 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await authService.signIn(email.trim(), password);
-      router.replace('/(tabs)');
+      
+      // Success! Navigation will be handled automatically by _layout.tsx
     } catch (error: any) {
       console.error('Login error:', error);
       
@@ -30,6 +31,8 @@ export default function LoginScreen() {
         message = 'Incorrect password.';
       } else if (error.code === 'auth/invalid-email') {
         message = 'Invalid email address.';
+      } else if (error.code === 'auth/invalid-credential') {
+        message = 'Invalid email or password.';
       }
       
       Alert.alert('Login Failed', message);
