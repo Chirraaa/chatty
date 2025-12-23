@@ -1,17 +1,15 @@
 // app/(tabs)/profile.tsx
-import React, { useState, useEffect, useContext } from 'react';
-import { StyleSheet, ScrollView, View, Alert, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, ScrollView, View, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { Layout, Text, Button, Card, Divider, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import authService from '@/services/auth.service';
 import { auth } from '@/config/firebase';
-import { ThemeContext } from '../_layout';
 
 export default function ProfileScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const themeContext = useContext(ThemeContext);
   const currentUser = auth().currentUser;
 
   useEffect(() => {
@@ -131,30 +129,6 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
-        {/* Appearance Card */}
-        <Card style={styles.card}>
-          <Text category='h6' style={styles.cardTitle}>Appearance</Text>
-          
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text category='s1'>Dark Mode</Text>
-              <Text appearance='hint' style={styles.settingDescription}>
-                Current theme: {themeContext.theme === 'light' ? 'Light' : 'Dark'}
-              </Text>
-            </View>
-            <TouchableOpacity 
-              onPress={themeContext.toggleTheme}
-              style={styles.themeToggle}
-            >
-              <Ionicons 
-                name={themeContext.theme === 'light' ? 'moon-outline' : 'sunny-outline'} 
-                size={24} 
-                color="#3366FF" 
-              />
-            </TouchableOpacity>
-          </View>
-        </Card>
-
         {/* About Card */}
         <Card style={styles.card}>
           <Text category='h6' style={styles.cardTitle}>About</Text>
@@ -236,21 +210,6 @@ const styles = StyleSheet.create({
   },
   encryptionText: {
     color: '#00D68F',
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  settingInfo: {
-    flex: 1,
-  },
-  settingDescription: {
-    marginTop: 4,
-    fontSize: 12,
-  },
-  themeToggle: {
-    padding: 8,
   },
   aboutText: {
     lineHeight: 20,

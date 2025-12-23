@@ -7,6 +7,7 @@ import {
   Platform,
   View,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Layout, Text, Input, Button, Modal, Card } from '@ui-kitten/components';
@@ -35,7 +36,9 @@ export default function ChatScreen() {
     const unsubscribe = messageService.subscribeToMessages(
       userId,
       (newMessages) => {
+        console.log('📩 Messages updated:', newMessages.length);
         setMessages(newMessages);
+        // Auto-scroll to end when new messages arrive
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
@@ -92,53 +95,32 @@ export default function ChatScreen() {
 
   const displayName = customNickname || userProfile?.username || 'Chat';
 
-  const HeaderTitle = () => (
-    <Button
-      appearance='ghost'
-      size='small'
-      onPress={() => setEditingNickname(true)}
-      accessoryLeft={(props) => (
-        <View style={styles.headerTitleContent}>
-          <Text category='s1' style={styles.headerName}>{displayName}</Text>
-          {customNickname && (
-            <Text category='c1' appearance='hint'>@{userProfile?.username}</Text>
-          )}
-        </View>
-      )}
-    />
-  );
-
-  const HeaderRight = () => (
-    <View style={styles.headerActions}>
-      <Button
-        appearance='ghost'
-        size='small'
-        accessoryLeft={(props) => <Ionicons name="call" size={20} color="#3366FF" />}
-        onPress={handleVoiceCall}
-      />
-      <Button
-        appearance='ghost'
-        size='small'
-        accessoryLeft={(props) => <Ionicons name="videocam" size={20} color="#3366FF" />}
-        onPress={handleVideoCall}
-      />
-      <Button
-        appearance='ghost'
-        size='small'
-        accessoryLeft={(props) => <Ionicons name="create-outline" size={20} color="#3366FF" />}
-        onPress={() => setEditingNickname(true)}
-      />
-    </View>
-  );
-
   return (
     <>
       <Stack.Screen
         options={{
           headerShown: true,
           title: displayName,
-          headerTitle: () => <HeaderTitle />,
-          headerRight: () => <HeaderRight />,
+          headerStyle: {
+            backgroundColor: '#222B45',
+          },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: {
+            color: '#FFFFFF',
+          },
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={handleVoiceCall} style={styles.headerButton}>
+                <Ionicons name="call" size={22} color="#3366FF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleVideoCall} style={styles.headerButton}>
+                <Ionicons name="videocam" size={22} color="#3366FF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setEditingNickname(true)} style={styles.headerButton}>
+                <Ionicons name="create-outline" size={22} color="#3366FF" />
+              </TouchableOpacity>
+            </View>
+          ),
         }}
       />
 
@@ -204,7 +186,10 @@ export default function ChatScreen() {
           <ChatInput
             receiverId={userId}
             onSendComplete={() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
+              console.log('📤 Message sent, scrolling to end');
+              setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+              }, 100);
             }}
           />
         </Layout>
@@ -217,15 +202,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerTitleContent: {
-    alignItems: 'center',
-  },
-  headerName: {
-    fontWeight: '600',
-  },
   headerActions: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 8,
+    marginRight: 8,
+  },
+  headerButton: {
+    padding: 8,
   },
   messagesList: {
     paddingVertical: 8,

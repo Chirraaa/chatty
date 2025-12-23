@@ -125,7 +125,7 @@ class MessageService {
     }
 
     /**
-     * Subscribe to messages (AUTO-DECRYPTS)
+     * Subscribe to messages (AUTO-DECRYPTS) - OPTIMIZED VERSION
      */
     subscribeToMessages(
         otherUserId: string,
@@ -199,22 +199,22 @@ class MessageService {
             };
 
             // Query 1: Messages sent by current user to other user
+            // REMOVED orderBy to avoid needing composite index
             unsubscribe1 = firestore()
                 .collection('messages')
                 .where('senderId', '==', currentUser.uid)
                 .where('receiverId', '==', otherUserId)
-                .orderBy('timestamp', 'asc')
                 .onSnapshot(
                     snapshot => processMessages(snapshot),
                     error => console.error('Query 1 error:', error)
                 );
 
             // Query 2: Messages sent by other user to current user
+            // REMOVED orderBy to avoid needing composite index
             unsubscribe2 = firestore()
                 .collection('messages')
                 .where('senderId', '==', otherUserId)
                 .where('receiverId', '==', currentUser.uid)
-                .orderBy('timestamp', 'asc')
                 .onSnapshot(
                     snapshot => processMessages(snapshot),
                     error => console.error('Query 2 error:', error)

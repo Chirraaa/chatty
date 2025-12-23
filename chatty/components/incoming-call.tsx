@@ -1,7 +1,8 @@
 // components/incoming-call.tsx
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, Alert } from 'react-native';
+import { StyleSheet, View, Modal, Alert, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
+import { Card, Text, Button } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
@@ -15,7 +16,6 @@ interface IncomingCall {
   isVideo: boolean;
 }
 
-// Firebase error type
 interface FirebaseError extends Error {
   code?: string;
 }
@@ -27,14 +27,12 @@ export function IncomingCallListener() {
     const currentUser = auth().currentUser;
     if (!currentUser) return;
 
-    // Listen for incoming calls
     const unsubscribe = firestore()
       .collection('calls')
       .where('receiverId', '==', currentUser.uid)
       .where('status', '==', 'calling')
       .onSnapshot(
         async (snapshot) => {
-          // Check if snapshot is null or invalid
           if (!snapshot) {
             console.warn('⚠️ Received null snapshot in incoming call listener');
             return;
@@ -45,7 +43,6 @@ export function IncomingCallListener() {
               if (change.type === 'added') {
                 const callData = change.doc.data();
                 
-                // Get caller info
                 const callerProfile = await authService.getUserProfile(callData.callerId);
                 const customNickname = await authService.getCustomNickname(callData.callerId);
                 
@@ -64,7 +61,6 @@ export function IncomingCallListener() {
         (error: FirebaseError) => {
           console.error('❌ Error in incoming call listener:', error);
           
-          // Provide helpful error message
           if (error.code === 'permission-denied') {
             console.error('💡 Permission denied: Check your Firestore security rules');
           } else if (error.code) {
@@ -113,56 +109,112 @@ export function IncomingCallListener() {
       transparent
       animationType="fade"
     >
-      <View className="flex-1 bg-black/80 items-center justify-center px-8">
-        <View className="bg-white dark:bg-gray-800 rounded-3xl p-8 w-full max-w-sm items-center">
-          {/* Caller Icon */}
-          <View className="w-24 h-24 bg-blue-500 rounded-full items-center justify-center mb-6">
-            <Text className="text-white text-4xl font-bold">
+      <View style={styles.modalOverlay}>
+        <Card style={styles.callCard}>
+          {/* Caller Avatar */}
+          <View style={styles.callerAvatar}>
+            <Text category='h1' style={styles.avatarText}>
               {incomingCall.callerName.charAt(0).toUpperCase()}
             </Text>
           </View>
 
           {/* Caller Name */}
-          <Text className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+          <Text category='h4' style={styles.callerName}>
             {incomingCall.callerName}
           </Text>
 
           {/* Call Type */}
-          <View className="flex-row items-center mb-8">
+          <View style={styles.callTypeContainer}>
             <Ionicons
               name={incomingCall.isVideo ? 'videocam' : 'call'}
               size={20}
-              color="#6B7280"
+              color="#8F9BB3"
             />
-            <Text className="text-gray-600 dark:text-gray-400 ml-2">
+            <Text appearance='hint' style={styles.callTypeText}>
               Incoming {incomingCall.isVideo ? 'video' : 'voice'} call
             </Text>
           </View>
 
           {/* Action Buttons */}
-          <View className="flex-row gap-4 w-full">
+          <View style={styles.actionButtons}>
             <TouchableOpacity
               onPress={handleDecline}
-              className="flex-1 bg-red-500 rounded-full py-4"
+              style={styles.declineButton}
             >
-              <View className="items-center">
-                <Ionicons name="close" size={24} color="white" />
-                <Text className="text-white font-semibold mt-1">Decline</Text>
-              </View>
+              <Ionicons name="close" size={28} color="#FFFFFF" />
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleAccept}
-              className="flex-1 bg-green-500 rounded-full py-4"
+              style={styles.acceptButton}
             >
-              <View className="items-center">
-                <Ionicons name="checkmark" size={24} color="white" />
-                <Text className="text-white font-semibold mt-1">Accept</Text>
-              </View>
+              <Ionicons name="checkmark" size={28} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-        </View>
+        </Card>
       </View>
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  callCard: {
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    padding: 32,
+  },
+  callerAvatar: {
+    width: 96,
+    height: 96,
+    backgroundColor: '#3366FF',
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 40,
+  },
+  callerName: {
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  callTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  callTypeText: {
+    marginLeft: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 16,
+    width: '100%',
+  },
+  declineButton: {
+    flex: 1,
+    backgroundColor: '#FF3D71',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptButton: {
+    flex: 1,
+    backgroundColor: '#00D68F',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

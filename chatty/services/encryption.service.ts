@@ -3,32 +3,19 @@ import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Type for extended crypto
-interface CryptoExtended extends Crypto {
-  randomBytes?: (length: number) => Uint8Array;
-}
-
-// Patch nacl.randomBytes if it doesn't exist
-if (!(nacl as any).randomBytes) {
-  console.log('🔧 Patching nacl.randomBytes...');
-  (nacl as any).randomBytes = function(length: number): Uint8Array {
-    const bytes = new Uint8Array(length);
-    const cryptoExt = global.crypto as CryptoExtended;
-    if (global.crypto && global.crypto.getRandomValues) {
-      global.crypto.getRandomValues(bytes);
-      return bytes;
-    } else if (cryptoExt?.randomBytes) {
-      return cryptoExt.randomBytes(length);
-    } else {
-      throw new Error('No random number generator available');
-    }
-  };
-}
-
 class EncryptionService {
   private keyPair: nacl.BoxKeyPair | null = null;
   private userId: string | null = null;
   private initialized = false;
+
+  /**
+   * Generate random bytes directly using crypto.getRandomValues
+   */
+  private getRandomBytes(length: number): Uint8Array {
+    const bytes = new Uint8Array(length);
+    global.crypto.getRandomValues(bytes);
+    return bytes;
+  }
 
   async initialize(userId: string) {
     if (this.initialized && this.userId === userId) return;
@@ -43,20 +30,10 @@ class EncryptionService {
         this.keyPair = storedKeys;
         console.log('✅ Loaded existing encryption keys');
       } else {
-        // Debug: Check crypto availability
-        console.log('🔍 Checking crypto availability...');
-        console.log('  - global.crypto exists:', !!global.crypto);
-        console.log('  - global.crypto.getRandomValues exists:', typeof global.crypto?.getRandomValues);
-        const cryptoExt = global.crypto as CryptoExtended;
-        console.log('  - global.crypto.randomBytes exists:', typeof cryptoExt?.randomBytes);
-        console.log('  - nacl.randomBytes exists:', typeof (nacl as any).randomBytes);
-        
-        // Skip the test - just try to generate keys
-        console.log('⏭️ Skipping random generation test, will try direct key generation...');
-        
-        // Generate new keys
+        // Generate new keys directly using crypto
         console.log('🔑 Generating new encryption keys...');
-        this.keyPair = this.generateKeyPairWithFallback();
+        const secretKey = this.getRandomBytes(32);
+        this.keyPair = nacl.box.keyPair.fromSecretKey(secretKey);
         
         await this.saveKeys(userId, this.keyPair);
         console.log('✅ Generated and saved new encryption keys');
@@ -65,35 +42,7 @@ class EncryptionService {
       this.initialized = true;
     } catch (error) {
       console.error('❌ Encryption initialization failed:', error);
-      
-      // Provide helpful error message
-      if (error instanceof Error) {
-        if (error.message.includes('no PRNG') || error.message.includes('not available')) {
-          console.error('💡 PRNG error: Make sure react-native-get-random-values is imported first');
-          console.error('💡 Check that polyfills.js is imported at the top of _layout.tsx');
-          console.error('💡 Try: import "../polyfills" before any other imports');
-        }
-      }
-      
       throw error;
-    }
-  }
-
-  /**
-   * Generate key pair with fallback mechanism
-   */
-  private generateKeyPairWithFallback(): nacl.BoxKeyPair {
-    try {
-      // Try the standard way first
-      return nacl.box.keyPair();
-    } catch (error) {
-      console.warn('⚠️ Standard key generation failed, trying manual approach...');
-      
-      // Manual key generation using crypto.getRandomValues directly
-      const secretKey = new Uint8Array(32);
-      global.crypto.getRandomValues(secretKey);
-      
-      return nacl.box.keyPair.fromSecretKey(secretKey);
     }
   }
 
@@ -124,15 +73,8 @@ class EncryptionService {
       // Decode recipient's public key
       const theirPublicKey = decodeBase64(recipientPublicKey);
       
-      // Generate a random nonce manually if needed
-      let nonce: Uint8Array;
-      try {
-        nonce = (nacl as any).randomBytes(nacl.box.nonceLength);
-      } catch (error) {
-        console.warn('⚠️ nacl.randomBytes failed, using crypto.getRandomValues directly');
-        nonce = new Uint8Array(nacl.box.nonceLength);
-        global.crypto.getRandomValues(nonce);
-      }
+      // Generate nonce directly using crypto
+      const nonce = this.getRandomBytes(nacl.box.nonceLength);
       
       // Encode message to bytes
       const messageBytes = decodeUTF8(plaintext);
