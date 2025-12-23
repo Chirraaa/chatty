@@ -1,4 +1,4 @@
-// app/chat/[userId].tsx - Clean minimal chat screen
+// app/chat/[userId].tsx - Fixed TypeScript error
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -80,6 +80,15 @@ export default function ChatScreen() {
     }
   };
 
+  const handleHeaderPress = () => {
+    // Show user info alert or modal instead of navigating to non-existent route
+    Alert.alert(
+      userProfile?.username || 'User',
+      customNickname ? `@${userProfile?.username}\nNickname: ${customNickname}` : `@${userProfile?.username}`,
+      [{ text: 'OK' }]
+    );
+  };
+
   const displayName = customNickname || userProfile?.username || 'Chat';
 
   return (
@@ -98,7 +107,7 @@ export default function ChatScreen() {
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.headerCenter} onPress={() => router.push(`/profile/${userId}`)}>
+          <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress}>
             {userProfile?.profilePicture ? (
               <Image
                 source={{ uri: `data:image/jpeg;base64,${userProfile.profilePicture}` }}

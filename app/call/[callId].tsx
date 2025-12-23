@@ -1,4 +1,4 @@
-// app/call/[callId].tsx - PIP-enabled video call
+// app/call/[callId].tsx - Fixed Animated value access
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -32,7 +32,19 @@ export default function CallScreen() {
   const [isPipMode, setIsPipMode] = useState(false);
   const [pipSize, setPipSize] = useState<'small' | 'large'>('small');
   const pan = useRef(new Animated.ValueXY({ x: SCREEN_WIDTH - 140, y: 100 })).current;
+  const currentPanPosition = useRef({ x: SCREEN_WIDTH - 140, y: 100 });
   const lastTap = useRef(0);
+
+  // Track pan position changes
+  useEffect(() => {
+    const listenerId = pan.addListener((value) => {
+      currentPanPosition.current = value;
+    });
+    
+    return () => {
+      pan.removeListener(listenerId);
+    };
+  }, []);
 
   // PIP Pan Responder
   const panResponder = useRef(
@@ -42,11 +54,12 @@ export default function CallScreen() {
         useNativeDriver: false,
       }),
       onPanResponderRelease: (_, gestureState) => {
-        // Snap to edges
+        // Snap to edges using the tracked position
+        const currentY = currentPanPosition.current.y;
         const x = gestureState.moveX < SCREEN_WIDTH / 2 ? 20 : SCREEN_WIDTH - (pipSize === 'small' ? 140 : 200);
         
         Animated.spring(pan, {
-          toValue: { x, y: pan.y._value },
+          toValue: { x, y: currentY },
           useNativeDriver: false,
         }).start();
       },
