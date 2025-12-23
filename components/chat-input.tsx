@@ -1,7 +1,6 @@
-// components/chat-input.tsx
+// components/chat-input.tsx - Clean minimal input
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity } from 'react-native';
-import { Input, Button } from '@ui-kitten/components';
+import { StyleSheet, View, TouchableOpacity, TextInput, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import imageService from '@/services/image.service';
 import messageService from '@/services/message.service';
@@ -11,6 +10,8 @@ interface ChatInputProps {
   onSendComplete?: () => void;
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -18,7 +19,7 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
   const handleSend = async () => {
     if (message.trim() && !sending) {
       const textToSend = message.trim();
-      setMessage(''); // Clear input immediately for better UX
+      setMessage('');
       
       try {
         setSending(true);
@@ -26,7 +27,6 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
         onSendComplete?.();
       } catch (error) {
         console.error('Error sending message:', error);
-        // Optionally restore the message on error
         setMessage(textToSend);
       } finally {
         setSending(false);
@@ -59,30 +59,37 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
         disabled={sending}
       >
         <Ionicons 
-          name="add-circle-outline" 
-          size={28} 
-          color={sending ? "#8F9BB3" : "#3366FF"} 
+          name="add-circle" 
+          size={32} 
+          color={sending ? "#AAB8C2" : "#667eea"} 
         />
       </TouchableOpacity>
 
-      <Input
-        style={styles.input}
-        placeholder="Type a message..."
-        value={message}
-        onChangeText={setMessage}
-        multiline={true}
-        disabled={sending}
-      />
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Message..."
+          placeholderTextColor="#AAB8C2"
+          value={message}
+          onChangeText={setMessage}
+          multiline={true}
+          maxLength={1000}
+          editable={!sending}
+        />
+      </View>
 
       <TouchableOpacity 
         onPress={handleSend}
         disabled={!message.trim() || sending}
-        style={styles.sendButton}
+        style={[
+          styles.sendButton,
+          (!message.trim() || sending) && styles.sendButtonDisabled
+        ]}
       >
         <Ionicons 
-          name="send" 
+          name="arrow-up" 
           size={24} 
-          color={(!message.trim() || sending) ? "#8F9BB3" : "#3366FF"} 
+          color="#FFFFFF" 
         />
       </TouchableOpacity>
     </View>
@@ -92,24 +99,41 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom:60,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E4E9F2',
-  },
-  input: {
-    flex: 1,
-    marginHorizontal: 8,
-    borderRadius: 20,
+    borderTopColor: '#E1E8ED',
   },
   iconButton: {
     padding: 4,
+    marginBottom: 4,
+  },
+  inputContainer: {
+    flex: 1,
+    marginHorizontal: 8,
+    backgroundColor: '#F7F9FA',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    maxHeight: 100,
+  },
+  input: {
+    fontSize: 16,
+    color: '#14171A',
+    maxHeight: 80,
   },
   sendButton: {
-    padding: 4,
-    paddingHorizontal: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#667eea',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#AAB8C2',
   },
 });

@@ -1,12 +1,23 @@
-// app/call/[callId].tsx
-import { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, Alert } from 'react-native';
+// app/call/[callId].tsx - PIP-enabled video call
+import { useState, useEffect, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  TouchableOpacity,
+  Dimensions,
+  PanResponder,
+  Animated,
+  Platform,
+} from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
-import { Layout, Text, Button } from '@ui-kitten/components';
+import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import callService from '@/services/call.service';
 import firestore from '@react-native-firebase/firestore';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CallScreen() {
   const { callId } = useLocalSearchParams<{ callId: string }>();
@@ -16,6 +27,31 @@ export default function CallScreen() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [callStatus, setCallStatus] = useState('connecting');
   const [isEnding, setIsEnding] = useState(false);
+  
+  // PIP state
+  const [isPipMode, setIsPipMode] = useState(false);
+  const [pipSize, setPipSize] = useState<'small' | 'large'>('small');
+  const pan = useRef(new Animated.ValueXY({ x: SCREEN_WIDTH - 140, y: 100 })).current;
+  const lastTap = useRef(0);
+
+  // PIP Pan Responder
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => isPipMode,
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: (_, gestureState) => {
+        // Snap to edges
+        const x = gestureState.moveX < SCREEN_WIDTH / 2 ? 20 : SCREEN_WIDTH - (pipSize === 'small' ? 140 : 200);
+        
+        Animated.spring(pan, {
+          toValue: { x, y: pan.y._value },
+          useNativeDriver: false,
+        }).start();
+      },
+    })
+  ).current;
 
   useEffect(() => {
     if (!callId) return;
@@ -24,7 +60,6 @@ export default function CallScreen() {
     const unsubscribe = monitorCallStatus();
 
     return () => {
-      // Cleanup when component unmounts
       if (!isEnding) {
         callService.endCall(callId).catch(console.error);
       }
@@ -54,7 +89,6 @@ export default function CallScreen() {
       setTimeout(() => clearInterval(interval), 30000);
     } catch (error) {
       console.error('Call setup error:', error);
-      Alert.alert('Call Failed', 'Unable to establish connection');
       router.back();
     }
   };
@@ -66,7 +100,6 @@ export default function CallScreen() {
       .onSnapshot((snapshot) => {
         const data = snapshot.data();
         if (data?.status === 'ended' && !isEnding) {
-          // Call was ended by the other person
           setIsEnding(true);
           callService.endCall(callId).catch(console.error);
           setTimeout(() => {
@@ -81,18 +114,16 @@ export default function CallScreen() {
   };
 
   const handleEndCall = async () => {
-    if (isEnding) return; // Prevent multiple calls
+    if (isEnding) return;
     
     try {
       setIsEnding(true);
       await callService.endCall(callId);
-      // Small delay to ensure cleanup completes
       setTimeout(() => {
         router.replace('/(tabs)');
       }, 100);
     } catch (error) {
       console.error('Error ending call:', error);
-      // Still navigate away even if there's an error
       router.replace('/(tabs)');
     }
   };
@@ -115,11 +146,88 @@ export default function CallScreen() {
     }
   };
 
+  const handlePipDoubleTap = () => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      setPipSize(pipSize === 'small' ? 'large' : 'small');
+    }
+    lastTap.current = now;
+  };
+
+  const handleMinimize = () => {
+    setIsPipMode(true);
+  };
+
+  const handleMaximize = () => {
+    setIsPipMode(false);
+  };
+
+  // PIP Mode Rendering
+  if (isPipMode) {
+    const pipWidth = pipSize === 'small' ? 120 : 180;
+    const pipHeight = pipSize === 'small' ? 160 : 240;
+
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.pipBackground}>
+          <Animated.View
+            style={[
+              styles.pipContainer,
+              {
+                width: pipWidth,
+                height: pipHeight,
+                transform: [{ translateX: pan.x }, { translateY: pan.y }],
+              },
+            ]}
+            {...panResponder.panHandlers}
+          >
+            <TouchableOpacity
+              style={styles.pipVideoContainer}
+              onPress={handlePipDoubleTap}
+              activeOpacity={0.9}
+            >
+              {remoteStream ? (
+                <RTCView
+                  streamURL={remoteStream.toURL()}
+                  style={styles.pipVideo}
+                  objectFit="cover"
+                  mirror={false}
+                />
+              ) : (
+                <View style={styles.pipPlaceholder}>
+                  <Ionicons name="person" size={40} color="#FFFFFF" />
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={styles.pipMaximizeButton}
+                onPress={handleMaximize}
+              >
+                <Ionicons name="expand" size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.pipEndButton}
+                onPress={handleEndCall}
+              >
+                <Ionicons name="call" size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </>
+    );
+  }
+
+  // Full Screen Mode Rendering
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       
-      <Layout style={styles.container}>
+      <View style={styles.container}>
         {/* Remote Video (Full Screen) */}
         {remoteStream ? (
           <RTCView
@@ -131,9 +239,9 @@ export default function CallScreen() {
         ) : (
           <View style={styles.waitingContainer}>
             <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={64} color="#8F9BB3" />
+              <Ionicons name="person" size={64} color="#FFFFFF" />
             </View>
-            <Text category='h5' style={styles.statusText}>
+            <Text style={styles.statusText}>
               {callStatus === 'connecting' ? 'Connecting...' : 'Waiting...'}
             </Text>
           </View>
@@ -153,65 +261,52 @@ export default function CallScreen() {
 
         {/* Status Indicator */}
         <View style={styles.statusIndicator}>
-          <Text category='c1' style={styles.statusIndicatorText}>
-            {callStatus === 'connected' ? '🟢 Connected' : '🟡 Connecting...'}
+          <View style={[styles.statusDot, callStatus === 'connected' && styles.statusDotConnected]} />
+          <Text style={styles.statusIndicatorText}>
+            {callStatus === 'connected' ? 'Connected' : 'Connecting'}
           </Text>
         </View>
 
-        {/* Controls */}
-        <View style={styles.controlsContainer}>
+        {/* Top Controls */}
+        <View style={styles.topControls}>
+          <TouchableOpacity onPress={handleMinimize} style={styles.topButton}>
+            <Ionicons name="remove" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom Controls */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={styles.controlsContainer}
+        >
           <View style={styles.controlsRow}>
-            {/* Mute Button */}
             <TouchableOpacity
               onPress={handleToggleMute}
-              style={[
-                styles.controlButton,
-                isMuted && styles.controlButtonActive
-              ]}
+              style={[styles.controlButton, isMuted && styles.controlButtonActive]}
             >
-              <Ionicons
-                name={isMuted ? 'mic-off' : 'mic'}
-                size={28}
-                color="#FFFFFF"
-              />
+              <Ionicons name={isMuted ? 'mic-off' : 'mic'} size={28} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* End Call Button */}
-            <TouchableOpacity
-              onPress={handleEndCall}
-              style={styles.endCallButton}
-            >
+            <TouchableOpacity onPress={handleEndCall} style={styles.endCallButton}>
               <Ionicons name="call" size={32} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Video Toggle Button */}
             <TouchableOpacity
               onPress={handleToggleVideo}
-              style={[
-                styles.controlButton,
-                isVideoOff && styles.controlButtonActive
-              ]}
+              style={[styles.controlButton, isVideoOff && styles.controlButtonActive]}
             >
-              <Ionicons
-                name={isVideoOff ? 'videocam-off' : 'videocam'}
-                size={28}
-                color="#FFFFFF"
-              />
+              <Ionicons name={isVideoOff ? 'videocam-off' : 'videocam'} size={28} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
 
-          {/* Switch Camera Button */}
           {!isVideoOff && (
-            <Button
-              onPress={handleSwitchCamera}
-              style={styles.switchCameraButton}
-              appearance='outline'
-            >
-              Switch Camera
-            </Button>
+            <TouchableOpacity onPress={handleSwitchCamera} style={styles.switchCameraButton}>
+              <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
+              <Text style={styles.switchCameraText}>Switch</Text>
+            </TouchableOpacity>
           )}
-        </View>
-      </Layout>
+        </LinearGradient>
+      </View>
     </>
   );
 }
@@ -228,60 +323,79 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1A2138',
+    backgroundColor: '#1A1A1A',
   },
   avatarPlaceholder: {
-    width: 128,
-    height: 128,
-    backgroundColor: '#2E3A59',
-    borderRadius: 64,
+    width: 120,
+    height: 120,
+    backgroundColor: '#333',
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   statusText: {
     color: '#FFFFFF',
+    fontSize: 16,
   },
   localVideoContainer: {
     position: 'absolute',
-    top: 48,
+    top: 60,
     right: 16,
-    width: 128,
-    height: 192,
-    borderRadius: 16,
+    width: 100,
+    height: 140,
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   localVideo: {
     flex: 1,
   },
   statusIndicator: {
     position: 'absolute',
-    top: 48,
+    top: 60,
     left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFC107',
+    marginRight: 6,
+  },
+  statusDotConnected: {
+    backgroundColor: '#4CAF50',
   },
   statusIndicatorText: {
     color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  topControls: {
+    position: 'absolute',
+    top: 60,
+    right: 132,
+    flexDirection: 'row',
+  },
+  topButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 8,
   },
   controlsContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 48,
+    paddingBottom: 40,
+    paddingTop: 60,
     paddingHorizontal: 32,
   },
   controlsRow: {
@@ -290,25 +404,84 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   controlButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#2E3A59',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   controlButtonActive: {
-    backgroundColor: '#FF3D71',
+    backgroundColor: '#E0245E',
   },
   endCallButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FF3D71',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E0245E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   switchCameraButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    alignSelf: 'center',
+  },
+  switchCameraText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  // PIP Styles
+  pipBackground: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  pipContainer: {
+    position: 'absolute',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  pipVideoContainer: {
+    flex: 1,
+    backgroundColor: '#1A1A1A',
+  },
+  pipVideo: {
+    flex: 1,
+  },
+  pipPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#333',
+  },
+  pipMaximizeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 16,
+    padding: 6,
+  },
+  pipEndButton: {
+    position: 'absolute',
+    bottom: 8,
+    left: '50%',
+    marginLeft: -20,
+    backgroundColor: '#E0245E',
+    borderRadius: 20,
+    padding: 8,
   },
 });

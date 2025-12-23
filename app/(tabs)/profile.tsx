@@ -1,16 +1,21 @@
-// app/(tabs)/profile.tsx - With clear messages option
+// app/(tabs)/profile.tsx - Clean profile with picture upload
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Alert } from 'react-native';
+import { StyleSheet, ScrollView, View, Alert, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
-import { Layout, Text, Button, Card, Divider, Spinner } from '@ui-kitten/components';
+import { Text, Button, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import authService from '@/services/auth.service';
-import { auth } from '@/config/firebase';
+import profilePictureService from '@/services/profile-picture.service';
 import { clearAllMyMessagesAndResetKeys } from '@/utils/clear-messages';
+import { auth } from '@/config/firebase';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ProfileScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const currentUser = auth().currentUser;
 
@@ -22,14 +27,8 @@ export default function ProfileScreen() {
     try {
       setLoading(true);
       if (currentUser) {
-        console.log('Loading profile for user:', currentUser.uid);
         const profile = await authService.getUserProfile(currentUser.uid);
-        console.log('Profile loaded:', profile);
         setUserProfile(profile);
-        
-        if (!profile) {
-          console.warn('Profile is null, user may not have completed registration');
-        }
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -39,30 +38,63 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleChangeProfilePicture = async () => {
+    try {
+      setUploading(true);
+      const base64 = await profilePictureService.pickProfilePicture();
+      
+      if (base64) {
+        await profilePictureService.uploadProfilePicture(base64);
+        Alert.alert('Success', 'Profile picture updated!');
+        await loadProfile();
+      }
+    } catch (error) {
+      console.error('Error changing profile picture:', error);
+      Alert.alert('Error', 'Failed to update profile picture');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveProfilePicture = () => {
+    Alert.alert(
+      'Remove Picture',
+      'Are you sure you want to remove your profile picture?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await profilePictureService.removeProfilePicture();
+              Alert.alert('Success', 'Profile picture removed');
+              await loadProfile();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to remove profile picture');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleClearMessages = () => {
     Alert.alert(
-      'Clear Messages & Reset Keys',
-      'This will:\n• Delete all your messages\n• Generate new encryption keys\n• Update your public key in Firebase\n\nOther users will be able to send you new encrypted messages after this.\n\nAre you sure?',
+      'Reset Encryption',
+      'This will delete all messages and generate new encryption keys.\n\nContinue?',
       [
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Clear & Reset',
+          text: 'Reset',
           style: 'destructive',
           onPress: async () => {
             try {
               setClearing(true);
               const deletedCount = await clearAllMyMessagesAndResetKeys();
-              Alert.alert(
-                'Success',
-                `Deleted ${deletedCount} messages and generated new encryption keys. You can now send and receive encrypted messages.`,
-                [{ text: 'OK' }]
-              );
+              Alert.alert('Success', `Deleted ${deletedCount} messages and generated new keys.`);
             } catch (error) {
-              console.error('Error clearing messages:', error);
-              Alert.alert('Error', 'Failed to clear messages and reset keys');
+              Alert.alert('Error', 'Failed to reset encryption');
             } finally {
               setClearing(false);
             }
@@ -75,23 +107,15 @@ export default function ProfileScreen() {
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out?',
+      'Are you sure?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            try {
-              await authService.signOut();
-              router.replace('/(auth)/login');
-            } catch (error) {
-              console.error('Sign out error:', error);
-              Alert.alert('Error', 'Failed to sign out');
-            }
+            await authService.signOut();
+            router.replace('/(auth)/login');
           },
         },
       ]
@@ -100,193 +124,226 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <Layout style={styles.container}>
-        <View style={styles.header}>
-          <Text category='h4'>Profile</Text>
-        </View>
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#667eea', '#764ba2']}
+          style={styles.header}
+        >
+          <Text style={styles.headerTitle}>Profile</Text>
+        </LinearGradient>
         <View style={styles.loadingContainer}>
           <Spinner size='large' />
-          <Text category='s1' appearance='hint' style={styles.loadingText}>
-            Loading profile...
-          </Text>
         </View>
-      </Layout>
+      </View>
     );
   }
 
   return (
-    <Layout style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text category='h4'>Profile</Text>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.header}
+      >
+        <Text style={styles.headerTitle}>Profile</Text>
+      </LinearGradient>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Profile Picture Section */}
+        <View style={styles.profilePictureSection}>
+          <View style={styles.profilePictureContainer}>
+            {userProfile?.profilePicture ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${userProfile.profilePicture}` }}
+                style={styles.profilePicture}
+              />
+            ) : (
+              <View style={styles.profilePicturePlaceholder}>
+                <Text style={styles.profilePicturePlaceholderText}>
+                  {userProfile?.username?.charAt(0).toUpperCase() || '?'}
+                </Text>
+              </View>
+            )}
+            
+            <TouchableOpacity
+              style={styles.changePictureButton}
+              onPress={handleChangeProfilePicture}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <Spinner size='small' status='control' />
+              ) : (
+                <Ionicons name="camera" size={20} color="#FFFFFF" />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.username}>{userProfile?.username || 'Unknown'}</Text>
+          <Text style={styles.email}>{currentUser?.email}</Text>
+
+          {userProfile?.profilePicture && (
+            <TouchableOpacity onPress={handleRemoveProfilePicture} style={styles.removePictureButton}>
+              <Text style={styles.removePictureText}>Remove Picture</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Profile Info */}
-        <View style={styles.profileSection}>
-          <View style={styles.avatar}>
-            <Text category='h1' style={styles.avatarText}>
-              {userProfile?.username?.charAt(0).toUpperCase() || currentUser?.email?.charAt(0).toUpperCase() || '?'}
-            </Text>
+        {/* Security Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="shield-checkmark" size={20} color="#667eea" />
+            <Text style={styles.cardTitle}>Security</Text>
           </View>
-
-          <Text category='h5' style={styles.username}>
-            {userProfile?.username || 'No username set'}
-          </Text>
-
-          <Text category='s1' appearance='hint'>
-            {currentUser?.email}
+          <Text style={styles.cardDescription}>
+            Your messages are end-to-end encrypted. Even we cannot read them.
           </Text>
         </View>
 
-        {/* Account Info Card */}
-        <Card style={styles.card}>
-          <Text category='h6' style={styles.cardTitle}>Account Information</Text>
-          
-          <View style={styles.infoRow}>
-            <Ionicons name="person-circle-outline" size={24} color="#3366FF" />
-            <View style={styles.infoContent}>
-              <Text category='s2'>User ID</Text>
-              <Text appearance='hint' numberOfLines={1}>
-                {currentUser?.uid.substring(0, 20)}...
-              </Text>
-            </View>
+        {/* Troubleshooting */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="construct" size={20} color="#657786" />
+            <Text style={styles.cardTitle}>Troubleshooting</Text>
           </View>
-
-          <Divider style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <Ionicons name="shield-checkmark-outline" size={24} color="#00D68F" />
-            <View style={styles.infoContent}>
-              <Text category='s2'>Security</Text>
-              <Text style={styles.securityText}>End-to-end encrypted</Text>
-            </View>
-          </View>
-        </Card>
-
-        {/* About Card */}
-        <Card style={styles.card}>
-          <Text category='h6' style={styles.cardTitle}>About</Text>
-          <Text appearance='hint' style={styles.aboutText}>
-            This app uses end-to-end encryption. Your messages are encrypted on 
-            your device and can only be decrypted by the recipient. Even we 
-            cannot read your messages.
+          <Text style={styles.cardDescription}>
+            If you see decryption errors, reset your encryption keys to start fresh.
           </Text>
-          
-          <Text appearance='hint' style={[styles.aboutText, styles.aboutTextSpaced]}>
-            Video and voice calls are also end-to-end encrypted using WebRTC.
-          </Text>
-        </Card>
-
-        {/* Troubleshooting Card */}
-        <Card style={styles.card}>
-          <Text category='h6' style={styles.cardTitle}>Troubleshooting</Text>
-          
-          <Text appearance='hint' style={styles.troubleshootText}>
-            If you see "🔒 Cannot decrypt this message" errors, it means those 
-            messages were encrypted with old keys. Clear messages and reset your 
-            encryption keys to start fresh.
-          </Text>
-          
           <Button
-            style={styles.clearButton}
+            style={styles.resetButton}
             status='warning'
             appearance='outline'
+            size='small'
             onPress={handleClearMessages}
             disabled={clearing}
           >
-            {clearing ? 'Clearing...' : 'Clear Messages & Reset Keys'}
+            {clearing ? 'Resetting...' : 'Reset Encryption'}
           </Button>
-        </Card>
+        </View>
 
-        {/* Sign Out Button */}
+        {/* Sign Out */}
         <Button
           style={styles.signOutButton}
           status='danger'
+          appearance='outline'
           onPress={handleSignOut}
         >
           Sign Out
         </Button>
       </ScrollView>
-    </Layout>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
+    backgroundColor: '#F7F9FA',
   },
   header: {
-    paddingTop: 20,
-    padding: 16,
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 16,
+  scrollContent: {
+    padding: 20,
   },
-  profileSection: {
+  profilePictureSection: {
     alignItems: 'center',
-    paddingVertical: 24,
+    marginBottom: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
   },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#3366FF',
+  profilePictureContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  profilePicture: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  profilePicturePlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#667eea',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
-  avatarText: {
+  profilePicturePlaceholderText: {
+    fontSize: 48,
+    fontWeight: 'bold',
     color: '#FFFFFF',
-    fontSize: 40,
+  },
+  changePictureButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#667eea',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
   },
   username: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#14171A',
     marginBottom: 4,
   },
+  email: {
+    fontSize: 14,
+    color: '#657786',
+  },
+  removePictureButton: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  removePictureText: {
+    fontSize: 14,
+    color: '#E0245E',
+  },
   card: {
-    marginVertical: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
   },
-  cardTitle: {
-    marginBottom: 16,
-  },
-  infoRow: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    marginBottom: 8,
   },
-  infoContent: {
-    marginLeft: 12,
-    flex: 1,
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#14171A',
+    marginLeft: 8,
   },
-  divider: {
-    marginVertical: 12,
-  },
-  securityText: {
-    color: '#00D68F',
-  },
-  aboutText: {
+  cardDescription: {
+    fontSize: 14,
+    color: '#657786',
     lineHeight: 20,
   },
-  aboutTextSpaced: {
+  resetButton: {
     marginTop: 12,
   },
-  troubleshootText: {
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  clearButton: {
-    marginTop: 8,
-  },
   signOutButton: {
-    marginTop: 16,
-    marginBottom: 32,
+    marginTop: 24,
+    marginBottom: 40,
   },
 });

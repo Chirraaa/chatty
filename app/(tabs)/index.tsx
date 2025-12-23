@@ -1,9 +1,10 @@
-// app/(tabs)/index.tsx
+// app/(tabs)/index.tsx - Clean chats list
 import { useState, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, FlatList, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
-import { Layout, Text, List, ListItem, Spinner } from '@ui-kitten/components';
+import { Text, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
@@ -12,10 +13,13 @@ interface ChatPreview {
   userId: string;
   username: string;
   customNickname?: string;
+  profilePicture?: string;
   lastMessage?: string;
   lastMessageTime?: Date;
   unreadCount: number;
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ChatsListScreen() {
   const [chats, setChats] = useState<ChatPreview[]>([]);
@@ -24,19 +28,15 @@ export default function ChatsListScreen() {
   useEffect(() => {
     const currentUser = auth().currentUser;
     
-    // Don't load chats if user is not authenticated
     if (!currentUser) {
-      console.log('👤 No user, skipping chats loading');
       setLoading(false);
       return;
     }
 
     const unsubscribe = loadChats();
     
-    // Cleanup function
     return () => {
       if (unsubscribe) {
-        console.log('🧹 Cleaning up chats listener');
         unsubscribe();
       }
     };
@@ -50,24 +50,18 @@ export default function ChatsListScreen() {
         return;
       }
 
-      console.log('📱 Loading chats for:', currentUser.uid);
-
-      // Simple approach: Get all messages without complex ordering
       const unsubscribe = firestore()
         .collection('messages')
         .where('senderId', '==', currentUser.uid)
         .onSnapshot(async (snapshot) => {
           try {
-            // Also get messages where current user is receiver
             const receiverSnapshot = await firestore()
               .collection('messages')
               .where('receiverId', '==', currentUser.uid)
               .get();
 
-            // Combine both queries
             const allDocs = [...snapshot.docs, ...receiverSnapshot.docs];
             
-            // Get unique user IDs
             const userIds = new Set<string>();
             allDocs.forEach(doc => {
               const data = doc.data();
@@ -79,7 +73,6 @@ export default function ChatsListScreen() {
               }
             });
 
-            // Load user profiles and custom nicknames
             const chatPreviews: ChatPreview[] = [];
             for (const userId of userIds) {
               const profile = await authService.getUserProfile(userId);
@@ -90,6 +83,7 @@ export default function ChatsListScreen() {
                   userId,
                   username: profile.username,
                   customNickname: customNickname || undefined,
+                  profilePicture: profile.profilePicture,
                   unreadCount: 0,
                 });
               }
@@ -102,12 +96,9 @@ export default function ChatsListScreen() {
             setLoading(false);
           }
         }, (error) => {
-          // Ignore permission denied errors - they're expected when user signs out
           if (error.cause === 'permission-denied') {
-            console.log('🔒 Chats listener closed (expected after sign out)');
             return;
           }
-          
           console.error('Error in messages listener:', error);
           setLoading(false);
         });
@@ -123,114 +114,170 @@ export default function ChatsListScreen() {
     router.push(`/chat/${userId}`);
   };
 
-  const renderAvatar = (item: ChatPreview) => (
-    <View style={styles.avatar}>
-      <Text category='h6' style={styles.avatarText}>
-        {(item.customNickname || item.username).charAt(0).toUpperCase()}
-      </Text>
-    </View>
-  );
-
-  const renderAccessory = () => (
-    <Ionicons name="chevron-forward" size={20} color="#8F9BB3" />
-  );
-
-  const renderItem = ({ item }: { item: ChatPreview }) => (
-    <ListItem
-      title={item.customNickname || item.username}
-      description={item.customNickname ? `@${item.username}` : undefined}
-      accessoryLeft={() => renderAvatar(item)}
-      accessoryRight={renderAccessory}
+  const renderChatItem = ({ item }: { item: ChatPreview }) => (
+    <TouchableOpacity
+      style={styles.chatItem}
       onPress={() => handleChatPress(item.userId)}
-    />
+      activeOpacity={0.7}
+    >
+      {item.profilePicture ? (
+        <Image
+          source={{ uri: `data:image/jpeg;base64,${item.profilePicture}` }}
+          style={styles.avatar}
+        />
+      ) : (
+        <View style={styles.avatarPlaceholder}>
+          <Text style={styles.avatarText}>
+            {(item.customNickname || item.username).charAt(0).toUpperCase()}
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.chatInfo}>
+        <Text style={styles.chatName} numberOfLines={1}>
+          {item.customNickname || item.username}
+        </Text>
+        {item.customNickname && (
+          <Text style={styles.chatUsername} numberOfLines={1}>
+            @{item.username}
+          </Text>
+        )}
+      </View>
+
+      <Ionicons name="chevron-forward" size={20} color="#AAB8C2" />
+    </TouchableOpacity>
   );
 
-  const renderEmptyComponent = () => (
+  const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="chatbubbles-outline" size={64} color="#8F9BB3" />
-      <Text category='s1' appearance='hint' style={styles.emptyText}>
-        No conversations yet
-      </Text>
-      <Text category='c1' appearance='hint' style={styles.emptySubtext}>
-        Go to Contacts to find someone to chat with
+      <Ionicons name="chatbubbles-outline" size={80} color="#E1E8ED" />
+      <Text style={styles.emptyTitle}>No conversations yet</Text>
+      <Text style={styles.emptySubtitle}>
+        Find someone in Contacts to start chatting
       </Text>
     </View>
   );
 
   if (loading) {
     return (
-      <Layout style={styles.container}>
-        <View style={styles.header}>
-          <Text category='h4'>Chats</Text>
-        </View>
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#667eea', '#764ba2']}
+          style={styles.header}
+        >
+          <Text style={styles.headerTitle}>Chats</Text>
+        </LinearGradient>
         <View style={styles.loadingContainer}>
           <Spinner size='large' />
         </View>
-      </Layout>
+      </View>
     );
   }
 
   return (
-    <Layout style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text category='h4'>Chats</Text>
-      </View>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.header}
+      >
+        <Text style={styles.headerTitle}>Chats</Text>
+      </LinearGradient>
 
-      {/* Chats List */}
       {chats.length > 0 ? (
-        <List
+        <FlatList
           data={chats}
-          renderItem={renderItem}
+          renderItem={renderChatItem}
           keyExtractor={(item) => item.userId}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
         />
       ) : (
-        renderEmptyComponent()
+        renderEmptyState()
       )}
-    </Layout>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F7F9FA',
   },
   header: {
-    paddingTop: 20,
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EDF1F7',
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  listContent: {
+    paddingTop: 8,
+  },
+  chatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 1,
+  },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#3366FF',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  avatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#667eea',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   avatarText: {
+    fontSize: 22,
+    fontWeight: '600',
     color: '#FFFFFF',
-    fontSize: 20,
+  },
+  chatInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  chatName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#14171A',
+    marginBottom: 2,
+  },
+  chatUsername: {
+    fontSize: 14,
+    color: '#657786',
   },
   emptyState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
+    paddingHorizontal: 40,
   },
-  emptyText: {
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#14171A',
     marginTop: 16,
-    textAlign: 'center',
+    marginBottom: 8,
   },
-  emptySubtext: {
-    marginTop: 8,
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#657786',
     textAlign: 'center',
+    lineHeight: 20,
   },
 });

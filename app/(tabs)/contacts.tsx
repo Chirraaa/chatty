@@ -1,9 +1,10 @@
-// app/(tabs)/contacts.tsx
+// app/(tabs)/contacts.tsx - Clean contacts screen
 import { useState } from 'react';
-import { StyleSheet, FlatList, View, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, FlatList, View, TouchableOpacity, Image, TextInput, Dimensions } from 'react-native';
 import { router } from 'expo-router';
-import { Layout, Text, Input, Button, Spinner, List, ListItem } from '@ui-kitten/components';
+import { Text, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import authService from '@/services/auth.service';
 import { auth } from '@/config/firebase';
 
@@ -11,21 +12,27 @@ interface User {
     id: string;
     username: string;
     email: string;
+    profilePicture?: string;
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ContactsScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<User[]>([]);
     const [loading, setLoading] = useState(false);
+    const [hasSearched, setHasSearched] = useState(false);
 
     const handleSearch = async () => {
         if (!searchQuery.trim()) {
             setSearchResults([]);
+            setHasSearched(false);
             return;
         }
 
         try {
             setLoading(true);
+            setHasSearched(true);
             const results = await authService.searchUsers(searchQuery.trim());
 
             const currentUserId = auth().currentUser?.uid;
@@ -35,12 +42,12 @@ export default function ContactsScreen() {
                     id: user.id,
                     username: user.username || 'Unknown',
                     email: user.email || '',
+                    profilePicture: user.profilePicture,
                 })) as User[];
 
             setSearchResults(filtered);
         } catch (error) {
             console.error('Search error:', error);
-            Alert.alert('Error', 'Failed to search users');
         } finally {
             setLoading(false);
         }
@@ -51,113 +58,197 @@ export default function ContactsScreen() {
     };
 
     const renderUserItem = ({ item }: { item: User }) => (
-        <ListItem
+        <TouchableOpacity
+            style={styles.userItem}
             onPress={() => handleSelectUser(item)}
-            title={item.username}
-            description={item.email}
-            accessoryLeft={() => (
-                <View style={styles.avatar}>
-                    <Text category='h6' style={styles.avatarText}>
+            activeOpacity={0.7}
+        >
+            {item.profilePicture ? (
+                <Image
+                    source={{ uri: `data:image/jpeg;base64,${item.profilePicture}` }}
+                    style={styles.avatar}
+                />
+            ) : (
+                <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.avatarText}>
                         {item.username.charAt(0).toUpperCase()}
                     </Text>
                 </View>
             )}
-            accessoryRight={() => (
-                <Ionicons name="chevron-forward" size={20} color="#8F9BB3" />
-            )}
-        />
+
+            <View style={styles.userInfo}>
+                <Text style={styles.username}>{item.username}</Text>
+                <Text style={styles.email}>{item.email}</Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={20} color="#AAB8C2" />
+        </TouchableOpacity>
     );
 
+    const renderEmptyState = () => {
+        if (loading) return null;
+        
+        if (!hasSearched) {
+            return (
+                <View style={styles.emptyState}>
+                    <Ionicons name="search" size={80} color="#E1E8ED" />
+                    <Text style={styles.emptyTitle}>Find people to chat with</Text>
+                    <Text style={styles.emptySubtitle}>
+                        Search by username to start a conversation
+                    </Text>
+                </View>
+            );
+        }
+
+        return (
+            <View style={styles.emptyState}>
+                <Ionicons name="people-outline" size={80} color="#E1E8ED" />
+                <Text style={styles.emptyTitle}>No users found</Text>
+                <Text style={styles.emptySubtitle}>
+                    Try searching for a different username
+                </Text>
+            </View>
+        );
+    };
+
     return (
-        <Layout style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Text category='h4'>Find Contact</Text>
-            </View>
+        <View style={styles.container}>
+            <LinearGradient
+                colors={['#667eea', '#764ba2']}
+                style={styles.header}
+            >
+                <Text style={styles.headerTitle}>Contacts</Text>
+            </LinearGradient>
 
-            {/* Search Bar */}
             <View style={styles.searchContainer}>
-                <Input
-                    style={styles.searchInput}
-                    placeholder='Search by username...'
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    onSubmitEditing={handleSearch}
-                    accessoryLeft={() => (
-                        <Ionicons name="search" size={20} color="#8F9BB3" />
+                <View style={styles.searchBar}>
+                    <Ionicons name="search" size={20} color="#657786" style={styles.searchIcon} />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search by username..."
+                        placeholderTextColor="#AAB8C2"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onSubmitEditing={handleSearch}
+                        returnKeyType="search"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+                    {loading && (
+                        <Spinner size='small' />
                     )}
-                />
-                <Button
-                    style={styles.searchButton}
-                    onPress={handleSearch}
-                    disabled={loading}
-                >
-                    {loading ? <Spinner size='small' status='control' /> : 'Search'}
-                </Button>
+                </View>
             </View>
 
-            {/* Search Results */}
             {searchResults.length > 0 ? (
-                <List
+                <FlatList
                     data={searchResults}
                     renderItem={renderUserItem}
                     keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
                 />
             ) : (
-                <View style={styles.emptyState}>
-                    <Ionicons name="people-outline" size={64} color="#8F9BB3" />
-                    <Text category='s1' appearance='hint' style={styles.emptyText}>
-                        {searchQuery
-                            ? 'No users found. Try a different username.'
-                            : 'Search for a username to start chatting'}
-                    </Text>
-                </View>
+                renderEmptyState()
             )}
-        </Layout>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#F7F9FA',
     },
     header: {
-        paddingTop: 20,
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#EDF1F7',
+        paddingTop: 50,
+        paddingBottom: 16,
+        paddingHorizontal: 20,
+    },
+    headerTitle: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
     },
     searchContainer: {
-        flexDirection: 'row',
         padding: 16,
-        gap: 8,
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    searchIcon: {
+        marginRight: 8,
     },
     searchInput: {
         flex: 1,
+        fontSize: 16,
+        color: '#14171A',
     },
-    searchButton: {
-        minWidth: 80,
+    listContent: {
+        paddingTop: 8,
+    },
+    userItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        backgroundColor: '#FFFFFF',
+        marginBottom: 1,
     },
     avatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#3366FF',
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+    },
+    avatarPlaceholder: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#667eea',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
     },
     avatarText: {
+        fontSize: 22,
+        fontWeight: '600',
         color: '#FFFFFF',
+    },
+    userInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    username: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#14171A',
+        marginBottom: 2,
+    },
+    email: {
+        fontSize: 14,
+        color: '#657786',
     },
     emptyState: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 32,
+        paddingHorizontal: 40,
     },
-    emptyText: {
+    emptyTitle: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#14171A',
         marginTop: 16,
+        marginBottom: 8,
+    },
+    emptySubtitle: {
+        fontSize: 14,
+        color: '#657786',
         textAlign: 'center',
+        lineHeight: 20,
     },
 });
