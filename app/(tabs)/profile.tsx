@@ -1,22 +1,21 @@
-// app/(tabs)/profile.tsx - Dark mode profile
+// app/(tabs)/profile.tsx - Clean minimalistic profile
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, Alert, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { StyleSheet, ScrollView, View, Alert, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Button, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import authService from '@/services/auth.service';
 import profilePictureService from '@/services/profile-picture.service';
 import { clearAllMyMessagesAndResetKeys } from '@/utils/clear-messages';
 import { auth } from '@/config/firebase';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ProfileScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const insets = useSafeAreaInsets();
   const currentUser = auth().currentUser;
 
   useEffect(() => {
@@ -124,13 +123,10 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#667eea', '#764ba2']}
-          style={styles.header}
-        >
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
           <Text style={styles.headerTitle}>Profile</Text>
-        </LinearGradient>
+        </View>
         <View style={styles.loadingContainer}>
           <Spinner size='large' />
         </View>
@@ -139,13 +135,10 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#667eea', '#764ba2']}
-        style={styles.header}
-      >
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
-      </LinearGradient>
+      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Profile Picture Section */}
@@ -187,47 +180,58 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Security Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Ionicons name="shield-checkmark" size={20} color="#667eea" />
-            <Text style={styles.cardTitle}>Security</Text>
+        {/* Settings Cards */}
+        <View style={styles.settingsSection}>
+          {/* Security Card */}
+          <View style={styles.card}>
+            <View style={styles.cardIcon}>
+              <Ionicons name="shield-checkmark" size={24} color="#34C759" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>End-to-End Encrypted</Text>
+              <Text style={styles.cardDescription}>
+                Your messages are secure and private
+              </Text>
+            </View>
           </View>
-          <Text style={styles.cardDescription}>
-            Your messages are end-to-end encrypted. Even we cannot read them.
-          </Text>
-        </View>
 
-        {/* Troubleshooting */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Ionicons name="construct" size={20} color="#8E8E93" />
-            <Text style={styles.cardTitle}>Troubleshooting</Text>
-          </View>
-          <Text style={styles.cardDescription}>
-            If you see decryption errors, reset your encryption keys to start fresh.
-          </Text>
-          <Button
-            style={styles.resetButton}
-            status='warning'
-            appearance='outline'
-            size='small'
+          {/* Troubleshooting Card */}
+          <TouchableOpacity 
+            style={styles.card}
             onPress={handleClearMessages}
             disabled={clearing}
+            activeOpacity={0.7}
           >
-            {clearing ? 'Resetting...' : 'Reset Encryption'}
-          </Button>
-        </View>
+            <View style={styles.cardIcon}>
+              <Ionicons name="refresh" size={24} color="#FF9500" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Reset Encryption</Text>
+              <Text style={styles.cardDescription}>
+                {clearing ? 'Resetting...' : 'Clear messages and generate new keys'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#3C3C3E" />
+          </TouchableOpacity>
 
-        {/* Sign Out */}
-        <Button
-          style={styles.signOutButton}
-          status='danger'
-          appearance='outline'
-          onPress={handleSignOut}
-        >
-          Sign Out
-        </Button>
+          {/* Sign Out Card */}
+          <TouchableOpacity 
+            style={styles.card}
+            onPress={handleSignOut}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardIcon}>
+              <Ionicons name="log-out" size={24} color="#FF3B30" />
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle}>Sign Out</Text>
+              <Text style={styles.cardDescription}>
+                End your session
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#3C3C3E" />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -236,15 +240,15 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#000000',
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: 16,
     paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
@@ -254,14 +258,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scrollContent: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
   profilePictureSection: {
     alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: '#2C2C2E',
-    borderRadius: 20,
-    padding: 24,
+    paddingVertical: 32,
   },
   profilePictureContainer: {
     position: 'relative',
@@ -296,16 +298,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#2C2C2E',
+    borderColor: '#000000',
   },
   username: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#FFFFFF',
     marginBottom: 4,
   },
   email: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#8E8E93',
   },
   removePictureButton: {
@@ -314,36 +316,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   removePictureText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#FF453A',
   },
-  card: {
-    backgroundColor: '#2C2C2E',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+  settingsSection: {
+    gap: 12,
   },
-  cardHeader: {
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  cardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2C2C2E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  cardContent: {
+    flex: 1,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: '#FFFFFF',
-    marginLeft: 8,
+    marginBottom: 2,
   },
   cardDescription: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#8E8E93',
     lineHeight: 20,
-  },
-  resetButton: {
-    marginTop: 12,
-  },
-  signOutButton: {
-    marginTop: 24,
-    marginBottom: 40,
   },
 });

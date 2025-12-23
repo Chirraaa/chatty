@@ -1,20 +1,17 @@
-// app/chat/[userId].tsx - Fixed keyboard layout for Android
+// app/chat/[userId].tsx - Minimalistic chat screen with safe area
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   View,
   Alert,
   TouchableOpacity,
   Image,
-  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { ChatInput } from '@/components/chat-input';
 import { MessageBubble } from '@/components/message-bubble';
 import messageService, { Message } from '@/services/message.service';
@@ -22,14 +19,13 @@ import authService from '@/services/auth.service';
 import callService from '@/services/call.service';
 import chatSettingsService from '@/services/chat-settings.service';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [customNickname, setCustomNickname] = useState<string | null>(null);
-  const [backgroundColor, setBackgroundColor] = useState('#1A1A1A');
+  const [backgroundColor, setBackgroundColor] = useState('#000000');
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -102,16 +98,11 @@ export default function ChatScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.container, { backgroundColor }]}>
+      <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
         {/* Custom Header */}
-        <LinearGradient
-          colors={['#667eea', '#764ba2']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.header}
-        >
+        <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+            <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress}>
@@ -141,15 +132,15 @@ export default function ChatScreen() {
 
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleVideoCall} style={styles.headerButton}>
-              <Ionicons name="videocam" size={22} color="#FFFFFF" />
+              <Ionicons name="videocam" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity onPress={handleVoiceCall} style={styles.headerButton}>
-              <Ionicons name="call" size={22} color="#FFFFFF" />
+              <Ionicons name="call" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
 
-        {/* Messages - No KeyboardAvoidingView wrapper */}
+        {/* Messages */}
         <View style={styles.content}>
           <FlatList
             ref={flatListRef}
@@ -188,12 +179,14 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 50,
-    paddingBottom: 12,
+    paddingVertical: 12,
     paddingHorizontal: 8,
+    backgroundColor: '#1C1C1E',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
   },
   backButton: {
-    padding: 8,
+    padding: 4,
   },
   headerCenter: {
     flex: 1,
@@ -205,18 +198,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
   headerAvatarPlaceholder: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: '#667eea',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
   headerAvatarText: {
     fontSize: 16,
@@ -234,7 +223,7 @@ const styles = StyleSheet.create({
   },
   headerUsername: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#8E8E93',
     marginTop: 1,
   },
   headerActions: {
@@ -250,6 +239,6 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingVertical: 12,
     paddingHorizontal: 4,
-    paddingBottom: 80, // Extra padding for input bar
+    paddingBottom: 80,
   },
 });

@@ -1,4 +1,4 @@
-// app/call/[callId].tsx - Fixed Animated value access
+// app/call/[callId].tsx - Clean minimalistic calling interface
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -13,7 +13,8 @@ import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
 import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import callService from '@/services/call.service';
 import firestore from '@react-native-firebase/firestore';
 
@@ -21,6 +22,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CallScreen() {
   const { callId } = useLocalSearchParams<{ callId: string }>();
+  const insets = useSafeAreaInsets();
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -54,7 +56,6 @@ export default function CallScreen() {
         useNativeDriver: false,
       }),
       onPanResponderRelease: (_, gestureState) => {
-        // Snap to edges using the tracked position
         const currentY = currentPanPosition.current.y;
         const x = gestureState.moveX < SCREEN_WIDTH / 2 ? 20 : SCREEN_WIDTH - (pipSize === 'small' ? 140 : 200);
         
@@ -262,7 +263,7 @@ export default function CallScreen() {
 
         {/* Local Video (Picture-in-Picture) */}
         {localStream && !isVideoOff && (
-          <View style={styles.localVideoContainer}>
+          <View style={[styles.localVideoContainer, { top: 60 + insets.top }]}>
             <RTCView
               streamURL={localStream.toURL()}
               style={styles.localVideo}
@@ -273,7 +274,7 @@ export default function CallScreen() {
         )}
 
         {/* Status Indicator */}
-        <View style={styles.statusIndicator}>
+        <View style={[styles.statusIndicator, { top: 60 + insets.top }]}>
           <View style={[styles.statusDot, callStatus === 'connected' && styles.statusDotConnected]} />
           <Text style={styles.statusIndicatorText}>
             {callStatus === 'connected' ? 'Connected' : 'Connecting'}
@@ -281,17 +282,14 @@ export default function CallScreen() {
         </View>
 
         {/* Top Controls */}
-        <View style={styles.topControls}>
+        <View style={[styles.topControls, { top: 60 + insets.top }]}>
           <TouchableOpacity onPress={handleMinimize} style={styles.topButton}>
             <Ionicons name="remove" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
         {/* Bottom Controls */}
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={styles.controlsContainer}
-        >
+        <BlurView intensity={80} style={[styles.controlsContainer, { paddingBottom: insets.bottom + 40 }]}>
           <View style={styles.controlsRow}>
             <TouchableOpacity
               onPress={handleToggleMute}
@@ -314,11 +312,10 @@ export default function CallScreen() {
 
           {!isVideoOff && (
             <TouchableOpacity onPress={handleSwitchCamera} style={styles.switchCameraButton}>
-              <Ionicons name="camera-reverse" size={24} color="#FFFFFF" />
-              <Text style={styles.switchCameraText}>Switch</Text>
+              <Ionicons name="camera-reverse" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           )}
-        </LinearGradient>
+        </BlurView>
       </View>
     </>
   );
@@ -353,28 +350,31 @@ const styles = StyleSheet.create({
   },
   localVideoContainer: {
     position: 'absolute',
-    top: 60,
     right: 16,
     width: 100,
     height: 140,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   localVideo: {
     flex: 1,
   },
   statusIndicator: {
     position: 'absolute',
-    top: 60,
     left: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
   statusDot: {
     width: 8,
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   statusDotConnected: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#34C759',
   },
   statusIndicatorText: {
     color: '#FFFFFF',
@@ -393,12 +393,11 @@ const styles = StyleSheet.create({
   },
   topControls: {
     position: 'absolute',
-    top: 60,
     right: 132,
     flexDirection: 'row',
   },
   topButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     borderRadius: 20,
     padding: 8,
   },
@@ -407,50 +406,52 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 40,
-    paddingTop: 60,
+    paddingTop: 40,
     paddingHorizontal: 32,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   controlsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: 24,
+    marginBottom: 16,
   },
   controlButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   controlButtonActive: {
-    backgroundColor: '#E0245E',
+    backgroundColor: '#FF3B30',
+    borderColor: '#FF3B30',
   },
   endCallButton: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#E0245E',
+    backgroundColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 8,
   },
   switchCameraButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 24,
     alignSelf: 'center',
-  },
-  switchCameraText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   // PIP Styles
   pipBackground: {
@@ -459,13 +460,15 @@ const styles = StyleSheet.create({
   },
   pipContainer: {
     position: 'absolute',
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   pipVideoContainer: {
     flex: 1,
@@ -484,7 +487,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     borderRadius: 16,
     padding: 6,
   },
@@ -493,7 +496,7 @@ const styles = StyleSheet.create({
     bottom: 8,
     left: '50%',
     marginLeft: -20,
-    backgroundColor: '#E0245E',
+    backgroundColor: '#FF3B30',
     borderRadius: 20,
     padding: 8,
   },

@@ -1,10 +1,10 @@
-// app/(tabs)/contacts.tsx - Dark mode contacts
+// app/(tabs)/contacts.tsx - Clean minimalistic contacts
 import { useState } from 'react';
-import { StyleSheet, FlatList, View, TouchableOpacity, Image, TextInput, Dimensions } from 'react-native';
+import { StyleSheet, FlatList, View, TouchableOpacity, Image, TextInput } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import authService from '@/services/auth.service';
 import { auth } from '@/config/firebase';
 
@@ -15,13 +15,12 @@ interface User {
     profilePicture?: string;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export default function ContactsScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<User[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+    const insets = useSafeAreaInsets();
 
     const handleSearch = async () => {
         if (!searchQuery.trim()) {
@@ -81,7 +80,7 @@ export default function ContactsScreen() {
                 <Text style={styles.email}>{item.email}</Text>
             </View>
 
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <Ionicons name="chevron-forward" size={20} color="#3C3C3E" />
         </TouchableOpacity>
     );
 
@@ -91,7 +90,7 @@ export default function ContactsScreen() {
         if (!hasSearched) {
             return (
                 <View style={styles.emptyState}>
-                    <Ionicons name="search" size={80} color="#333" />
+                    <Ionicons name="search" size={64} color="#3C3C3E" />
                     <Text style={styles.emptyTitle}>Find people to chat with</Text>
                     <Text style={styles.emptySubtitle}>
                         Search by username to start a conversation
@@ -102,7 +101,7 @@ export default function ContactsScreen() {
 
         return (
             <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={80} color="#333" />
+                <Ionicons name="people-outline" size={64} color="#3C3C3E" />
                 <Text style={styles.emptyTitle}>No users found</Text>
                 <Text style={styles.emptySubtitle}>
                     Try searching for a different username
@@ -112,13 +111,10 @@ export default function ContactsScreen() {
     };
 
     return (
-        <View style={styles.container}>
-            <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                style={styles.header}
-            >
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+            <View style={styles.header}>
                 <Text style={styles.headerTitle}>Contacts</Text>
-            </LinearGradient>
+            </View>
 
             <View style={styles.searchContainer}>
                 <View style={styles.searchBar}>
@@ -158,35 +154,38 @@ export default function ContactsScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#1A1A1A',
+        backgroundColor: '#000000',
     },
     header: {
-        paddingTop: 50,
-        paddingBottom: 16,
         paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 16,
     },
     headerTitle: {
-        fontSize: 28,
+        fontSize: 34,
         fontWeight: 'bold',
         color: '#FFFFFF',
     },
     searchContainer: {
-        padding: 16,
+        paddingHorizontal: 16,
+        paddingBottom: 16,
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#2C2C2E',
-        borderRadius: 24,
+        backgroundColor: '#1C1C1E',
+        borderRadius: 12,
         paddingHorizontal: 16,
         paddingVertical: 12,
+        borderWidth: 1,
+        borderColor: '#2C2C2E',
     },
     searchIcon: {
         marginRight: 8,
     },
     searchInput: {
         flex: 1,
-        fontSize: 16,
+        fontSize: 17,
         color: '#FFFFFF',
     },
     listContent: {
@@ -197,24 +196,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 12,
         paddingHorizontal: 20,
-        backgroundColor: '#2C2C2E',
-        marginBottom: 1,
+        backgroundColor: '#1C1C1E',
+        borderBottomWidth: 1,
+        borderBottomColor: '#2C2C2E',
     },
     avatar: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 52,
+        height: 52,
+        borderRadius: 26,
     },
     avatarPlaceholder: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 52,
+        height: 52,
+        borderRadius: 26,
         backgroundColor: '#667eea',
         alignItems: 'center',
         justifyContent: 'center',
     },
     avatarText: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: '600',
         color: '#FFFFFF',
     },
@@ -223,13 +223,13 @@ const styles = StyleSheet.create({
         marginLeft: 12,
     },
     username: {
-        fontSize: 16,
+        fontSize: 17,
         fontWeight: '600',
         color: '#FFFFFF',
         marginBottom: 2,
     },
     email: {
-        fontSize: 14,
+        fontSize: 15,
         color: '#8E8E93',
     },
     emptyState: {
@@ -239,16 +239,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 40,
     },
     emptyTitle: {
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: '600',
         color: '#FFFFFF',
         marginTop: 16,
         marginBottom: 8,
     },
     emptySubtitle: {
-        fontSize: 14,
+        fontSize: 15,
         color: '#8E8E93',
         textAlign: 'center',
-        lineHeight: 20,
+        lineHeight: 22,
     },
 });

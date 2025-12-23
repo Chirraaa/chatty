@@ -1,9 +1,10 @@
-// components/incoming-call.tsx
+// components/incoming-call.tsx - Minimalistic clean design
 import { useEffect, useState } from 'react';
-import { StyleSheet, View, Modal, Alert, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Modal, Alert, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
-import { Card, Text, Button } from '@ui-kitten/components';
+import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
@@ -13,6 +14,7 @@ interface IncomingCall {
   callId: string;
   callerId: string;
   callerName: string;
+  callerPicture?: string;
   isVideo: boolean;
 }
 
@@ -20,13 +22,14 @@ interface FirebaseError extends Error {
   code?: string;
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 export function IncomingCallListener() {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
 
   useEffect(() => {
     const currentUser = auth().currentUser;
     
-    // Don't set up listener if user is not authenticated
     if (!currentUser) {
       console.log('👤 No user, skipping incoming call listener setup');
       return;
@@ -57,6 +60,7 @@ export function IncomingCallListener() {
                   callId: change.doc.id,
                   callerId: callData.callerId,
                   callerName: customNickname || callerProfile?.username || 'Unknown',
+                  callerPicture: callerProfile?.profilePicture,
                   isVideo: callData.isVideo,
                 });
               }
@@ -66,7 +70,6 @@ export function IncomingCallListener() {
           }
         },
         (error: FirebaseError) => {
-          // Ignore permission denied errors - they're expected when user signs out
           if (error.code === 'permission-denied') {
             console.log('🔒 Incoming call listener closed (expected after sign out)');
             return;
@@ -84,7 +87,7 @@ export function IncomingCallListener() {
       console.log('🧹 Cleaning up incoming call listener');
       unsubscribe();
     };
-  }, []); // Empty dependency array - only run on mount/unmount
+  }, []);
 
   const handleAccept = async () => {
     if (!incomingCall) return;
@@ -123,17 +126,26 @@ export function IncomingCallListener() {
       transparent
       animationType="fade"
     >
-      <View style={styles.modalOverlay}>
-        <Card style={styles.callCard}>
+      <BlurView intensity={100} style={styles.modalOverlay}>
+        <View style={styles.callCard}>
           {/* Caller Avatar */}
-          <View style={styles.callerAvatar}>
-            <Text category='h1' style={styles.avatarText}>
-              {incomingCall.callerName.charAt(0).toUpperCase()}
-            </Text>
+          <View style={styles.avatarContainer}>
+            {incomingCall.callerPicture ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${incomingCall.callerPicture}` }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>
+                  {incomingCall.callerName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Caller Name */}
-          <Text category='h4' style={styles.callerName}>
+          <Text style={styles.callerName}>
             {incomingCall.callerName}
           </Text>
 
@@ -141,10 +153,10 @@ export function IncomingCallListener() {
           <View style={styles.callTypeContainer}>
             <Ionicons
               name={incomingCall.isVideo ? 'videocam' : 'call'}
-              size={20}
-              color="#8F9BB3"
+              size={16}
+              color="#8E8E93"
             />
-            <Text appearance='hint' style={styles.callTypeText}>
+            <Text style={styles.callTypeText}>
               Incoming {incomingCall.isVideo ? 'video' : 'voice'} call
             </Text>
           </View>
@@ -155,18 +167,18 @@ export function IncomingCallListener() {
               onPress={handleDecline}
               style={styles.declineButton}
             >
-              <Ionicons name="close" size={28} color="#FFFFFF" />
+              <Ionicons name="close" size={32} color="#FFFFFF" />
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleAccept}
               style={styles.acceptButton}
             >
-              <Ionicons name="checkmark" size={28} color="#FFFFFF" />
+              <Ionicons name="call" size={32} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-        </Card>
-      </View>
+        </View>
+      </BlurView>
     </Modal>
   );
 }
@@ -174,61 +186,89 @@ export function IncomingCallListener() {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   callCard: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 360,
     alignItems: 'center',
-    padding: 32,
+    padding: 40,
+    backgroundColor: 'rgba(28, 28, 30, 0.95)',
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  callerAvatar: {
+  avatarContainer: {
+    marginBottom: 24,
+  },
+  avatar: {
     width: 96,
     height: 96,
-    backgroundColor: '#3366FF',
+    borderRadius: 48,
+  },
+  avatarPlaceholder: {
+    width: 96,
+    height: 96,
+    backgroundColor: '#667eea',
     borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
   },
   avatarText: {
     color: '#FFFFFF',
     fontSize: 40,
+    fontWeight: '600',
   },
   callerName: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: '#FFFFFF',
     marginBottom: 8,
     textAlign: 'center',
   },
   callTypeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 40,
   },
   callTypeText: {
     marginLeft: 8,
+    fontSize: 15,
+    color: '#8E8E93',
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 24,
     width: '100%',
+    justifyContent: 'center',
   },
   declineButton: {
-    flex: 1,
-    backgroundColor: '#FF3D71',
-    borderRadius: 12,
-    paddingVertical: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
   },
   acceptButton: {
-    flex: 1,
-    backgroundColor: '#00D68F',
-    borderRadius: 12,
-    paddingVertical: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#34C759',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#34C759',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
   },
 });

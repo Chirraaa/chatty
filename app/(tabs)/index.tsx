@@ -1,10 +1,10 @@
-// app/(tabs)/index.tsx - Dark mode chats list
+// app/(tabs)/index.tsx - Clean minimalistic chats list
 import { useState, useEffect } from 'react';
-import { StyleSheet, View, FlatList, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { StyleSheet, View, FlatList, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Spinner } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
@@ -19,11 +19,10 @@ interface ChatPreview {
   unreadCount: number;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export default function ChatsListScreen() {
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const currentUser = auth().currentUser;
@@ -144,13 +143,13 @@ export default function ChatsListScreen() {
         )}
       </View>
 
-      <Ionicons name="chevron-forward" size={20} color="#666" />
+      <Ionicons name="chevron-forward" size={20} color="#3C3C3E" />
     </TouchableOpacity>
   );
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="chatbubbles-outline" size={80} color="#333" />
+      <Ionicons name="chatbubbles-outline" size={64} color="#3C3C3E" />
       <Text style={styles.emptyTitle}>No conversations yet</Text>
       <Text style={styles.emptySubtitle}>
         Find someone in Contacts to start chatting
@@ -160,13 +159,10 @@ export default function ChatsListScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#667eea', '#764ba2']}
-          style={styles.header}
-        >
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
           <Text style={styles.headerTitle}>Chats</Text>
-        </LinearGradient>
+        </View>
         <View style={styles.loadingContainer}>
           <Spinner size='large' />
         </View>
@@ -175,13 +171,10 @@ export default function ChatsListScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#667eea', '#764ba2']}
-        style={styles.header}
-      >
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
         <Text style={styles.headerTitle}>Chats</Text>
-      </LinearGradient>
+      </View>
 
       {chats.length > 0 ? (
         <FlatList
@@ -201,15 +194,15 @@ export default function ChatsListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#000000',
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: 16,
     paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
@@ -226,24 +219,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 20,
-    backgroundColor: '#2C2C2E',
-    marginBottom: 1,
+    backgroundColor: '#1C1C1E',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
   avatarPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#667eea',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -252,13 +246,13 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   chatName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   chatUsername: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#8E8E93',
   },
   emptyState: {
@@ -268,16 +262,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '600',
     color: '#FFFFFF',
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#8E8E93',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
   },
 });
