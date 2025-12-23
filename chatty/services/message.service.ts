@@ -9,14 +9,15 @@ export interface Message {
     senderId: string;
     receiverId: string;
     type: 'text' | 'image';
-    contentForSender?: string;     // Encrypted for sender to read
-    contentForReceiver?: string;   // Encrypted for receiver to read
-    imageDataForSender?: string;   // Encrypted for sender to read
-    imageDataForReceiver?: string; // Encrypted for receiver to read
+    contentForSender?: string;
+    contentForReceiver?: string;
+    imageDataForSender?: string;
+    imageDataForReceiver?: string;
     timestamp: Date;
     decryptedContent?: string;
     decryptedImageUri?: string;
     isPending?: boolean;
+    decryptionError?: boolean;
 }
 
 class MessageService {
@@ -105,6 +106,114 @@ class MessageService {
     }
 
     /**
+     * Decrypt a single message
+     */
+    private async decryptMessage(data: any, messageId: string, currentUserId: string): Promise<Message> {
+        const message: Message = {
+            id: messageId,
+            senderId: data.senderId,
+            receiverId: data.receiverId,
+            type: data.type,
+            timestamp: data.timestamp?.toDate() || new Date(),
+            decryptionError: false,
+        };
+
+        try {
+            const isSentByMe = data.senderId === currentUserId;
+
+            if (data.type === 'text') {
+                if (isSentByMe) {
+                    // I sent this message - decrypt my symmetric copy
+                    if (data.contentForSender) {
+                        message.decryptedContent = await encryptionService.decryptForSelf(
+                            data.contentForSender
+                        );
+                    } else if (data.content) {
+                        // Fallback for old single-encrypted messages
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+                        message.decryptedContent = await encryptionService.decryptMessage(
+                            senderPublicKey,
+                            data.content
+                        );
+                    } else {
+                        throw new Error('No encrypted content found');
+                    }
+                } else {
+                    // I received this message - decrypt asymmetrically
+                    if (data.contentForReceiver) {
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+                        message.decryptedContent = await encryptionService.decryptMessage(
+                            senderPublicKey,
+                            data.contentForReceiver
+                        );
+                    } else if (data.content) {
+                        // Fallback for old messages
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+                        message.decryptedContent = await encryptionService.decryptMessage(
+                            senderPublicKey,
+                            data.content
+                        );
+                    } else {
+                        throw new Error('No encrypted content found');
+                    }
+                }
+            } else if (data.type === 'image') {
+                if (isSentByMe) {
+                    // I sent this image - decrypt my symmetric copy
+                    if (data.imageDataForSender) {
+                        const decryptedBase64 = await encryptionService.decryptForSelf(
+                            data.imageDataForSender
+                        );
+                        message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
+                    } else if (data.imageData) {
+                        // Fallback
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+                        const decryptedBase64 = await encryptionService.decryptMessage(
+                            senderPublicKey,
+                            data.imageData
+                        );
+                        message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
+                    } else {
+                        throw new Error('No encrypted image data found');
+                    }
+                } else {
+                    // I received this image - decrypt asymmetrically
+                    if (data.imageDataForReceiver) {
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+                        const decryptedBase64 = await encryptionService.decryptMessage(
+                            senderPublicKey,
+                            data.imageDataForReceiver
+                        );
+                        message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
+                    } else if (data.imageData) {
+                        // Fallback
+                        const senderPublicKey = await this.getSenderPublicKey(data.senderId);
+                        const decryptedBase64 = await encryptionService.decryptMessage(
+                            senderPublicKey,
+                            data.imageData
+                        );
+                        message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
+                    } else {
+                        throw new Error('No encrypted image data found');
+                    }
+                }
+            }
+
+            return message;
+        } catch (decryptError) {
+            // Log details for debugging but don't spam console
+            console.warn(
+                `⚠️ Cannot decrypt message ${messageId}:`,
+                decryptError instanceof Error ? decryptError.message : 'Unknown error'
+            );
+
+            message.decryptionError = true;
+            message.decryptedContent = '🔒 Message encrypted with old keys';
+            return message;
+        }
+    }
+
+    /**
      * Subscribe to messages with proper decryption
      */
     subscribeToMessages(
@@ -116,106 +225,25 @@ class MessageService {
             if (!currentUser) throw new Error('Not authenticated');
 
             let allMessages: Message[] = [];
+            const processedMessageIds = new Set<string>();
 
             const processMessages = async (snapshot: any) => {
-                // PARALLEL DECRYPTION
-                const decryptionPromises = snapshot.docs.map(async (doc: any) => {
-                    const data = doc.data();
-                    const message: Message = {
-                        id: doc.id,
-                        senderId: data.senderId,
-                        receiverId: data.receiverId,
-                        type: data.type,
-                        timestamp: data.timestamp?.toDate() || new Date(),
-                        isPending: snapshot.metadata.hasPendingWrites,
-                    };
+                // Process only new/changed documents
+                const newMessages = await Promise.all(
+                    snapshot.docs
+                        .filter((doc: any) => !processedMessageIds.has(doc.id))
+                        .map(async (doc: any) => {
+                            processedMessageIds.add(doc.id);
+                            return this.decryptMessage(doc.data(), doc.id, currentUser.uid);
+                        })
+                );
 
-                    try {
-                        const isSentByMe = data.senderId === currentUser.uid;
-
-                        if (data.type === 'text') {
-                            if (isSentByMe) {
-                                // I sent this message - decrypt my symmetric copy
-                                if (data.contentForSender) {
-                                    message.decryptedContent = await encryptionService.decryptForSelf(
-                                        data.contentForSender
-                                    );
-                                } else if (data.content) {
-                                    // Fallback for old single-encrypted messages
-                                    const senderPublicKey = await this.getSenderPublicKey(data.senderId);
-                                    message.decryptedContent = await encryptionService.decryptMessage(
-                                        senderPublicKey,
-                                        data.content
-                                    );
-                                }
-                            } else {
-                                // I received this message - decrypt asymmetrically
-                                if (data.contentForReceiver) {
-                                    const senderPublicKey = await this.getSenderPublicKey(data.senderId);
-                                    message.decryptedContent = await encryptionService.decryptMessage(
-                                        senderPublicKey,
-                                        data.contentForReceiver
-                                    );
-                                } else if (data.content) {
-                                    // Fallback for old messages
-                                    const senderPublicKey = await this.getSenderPublicKey(data.senderId);
-                                    message.decryptedContent = await encryptionService.decryptMessage(
-                                        senderPublicKey,
-                                        data.content
-                                    );
-                                }
-                            }
-                        } else if (data.type === 'image') {
-                            if (isSentByMe) {
-                                // I sent this image - decrypt my symmetric copy
-                                if (data.imageDataForSender) {
-                                    const decryptedBase64 = await encryptionService.decryptForSelf(
-                                        data.imageDataForSender
-                                    );
-                                    message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
-                                } else if (data.imageData) {
-                                    // Fallback
-                                    const senderPublicKey = await this.getSenderPublicKey(data.senderId);
-                                    const decryptedBase64 = await encryptionService.decryptMessage(
-                                        senderPublicKey,
-                                        data.imageData
-                                    );
-                                    message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
-                                }
-                            } else {
-                                // I received this image - decrypt asymmetrically
-                                if (data.imageDataForReceiver) {
-                                    const senderPublicKey = await this.getSenderPublicKey(data.senderId);
-                                    const decryptedBase64 = await encryptionService.decryptMessage(
-                                        senderPublicKey,
-                                        data.imageDataForReceiver
-                                    );
-                                    message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
-                                } else if (data.imageData) {
-                                    // Fallback
-                                    const senderPublicKey = await this.getSenderPublicKey(data.senderId);
-                                    const decryptedBase64 = await encryptionService.decryptMessage(
-                                        senderPublicKey,
-                                        data.imageData
-                                    );
-                                    message.decryptedImageUri = `data:image/jpeg;base64,${decryptedBase64}`;
-                                }
-                            }
-                        }
-                        return message;
-                    } catch (decryptError) {
-                        console.error('❌ Decryption failed for message:', doc.id, decryptError);
-                        message.decryptedContent = '[Unable to decrypt - key mismatch]';
-                        return message;
-                    }
-                });
-
-                const newMessages = await Promise.all(decryptionPromises);
-
+                // Merge with existing messages
                 const messageMap = new Map<string, Message>();
                 allMessages.forEach(msg => messageMap.set(msg.id, msg));
                 newMessages.forEach(msg => messageMap.set(msg.id, msg));
 
+                // Update messages list and sort by timestamp
                 allMessages = Array.from(messageMap.values()).sort(
                     (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
                 );
@@ -223,7 +251,7 @@ class MessageService {
                 onUpdate(allMessages);
             };
 
-            const options = { includeMetadataChanges: true };
+            const options = { includeMetadataChanges: false }; // Changed to false to reduce redundant updates
 
             const unsubscribe1 = firestore()
                 .collection('messages')

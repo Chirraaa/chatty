@@ -22,57 +22,79 @@ export default function ChatsListScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const currentUser = auth().currentUser;
+    
+    // Don't load chats if user is not authenticated
+    if (!currentUser) {
+      console.log('👤 No user, skipping chats loading');
+      setLoading(false);
+      return;
+    }
+
     loadChats();
   }, []);
 
   const loadChats = async () => {
     try {
       const currentUser = auth().currentUser;
-      if (!currentUser) return;
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
+
+      console.log('📱 Loading chats for:', currentUser.uid);
 
       // Simple approach: Get all messages without complex ordering
       const unsubscribe = firestore()
         .collection('messages')
         .where('senderId', '==', currentUser.uid)
         .onSnapshot(async (snapshot) => {
-          // Also get messages where current user is receiver
-          const receiverSnapshot = await firestore()
-            .collection('messages')
-            .where('receiverId', '==', currentUser.uid)
-            .get();
+          try {
+            // Also get messages where current user is receiver
+            const receiverSnapshot = await firestore()
+              .collection('messages')
+              .where('receiverId', '==', currentUser.uid)
+              .get();
 
-          // Combine both queries
-          const allDocs = [...snapshot.docs, ...receiverSnapshot.docs];
-          
-          // Get unique user IDs
-          const userIds = new Set<string>();
-          allDocs.forEach(doc => {
-            const data = doc.data();
-            if (data.senderId !== currentUser.uid) {
-              userIds.add(data.senderId);
-            }
-            if (data.receiverId !== currentUser.uid) {
-              userIds.add(data.receiverId);
-            }
-          });
-
-          // Load user profiles and custom nicknames
-          const chatPreviews: ChatPreview[] = [];
-          for (const userId of userIds) {
-            const profile = await authService.getUserProfile(userId);
-            const customNickname = await authService.getCustomNickname(userId);
+            // Combine both queries
+            const allDocs = [...snapshot.docs, ...receiverSnapshot.docs];
             
-            if (profile) {
-              chatPreviews.push({
-                userId,
-                username: profile.username,
-                customNickname: customNickname || undefined,
-                unreadCount: 0,
-              });
-            }
-          }
+            // Get unique user IDs
+            const userIds = new Set<string>();
+            allDocs.forEach(doc => {
+              const data = doc.data();
+              if (data.senderId !== currentUser.uid) {
+                userIds.add(data.senderId);
+              }
+              if (data.receiverId !== currentUser.uid) {
+                userIds.add(data.receiverId);
+              }
+            });
 
-          setChats(chatPreviews);
+            // Load user profiles and custom nicknames
+            const chatPreviews: ChatPreview[] = [];
+            for (const userId of userIds) {
+              const profile = await authService.getUserProfile(userId);
+              const customNickname = await authService.getCustomNickname(userId);
+              
+              if (profile) {
+                chatPreviews.push({
+                  userId,
+                  username: profile.username,
+                  customNickname: customNickname || undefined,
+                  unreadCount: 0,
+                });
+              }
+            }
+
+            setChats(chatPreviews);
+            setLoading(false);
+          } catch (error) {
+            console.error('Error processing messages:', error);
+            setLoading(false);
+          }
+        }, (error) => {
+          console.error('Error in messages listener:', error);
           setLoading(false);
         });
 

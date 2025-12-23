@@ -25,7 +25,14 @@ export function IncomingCallListener() {
 
   useEffect(() => {
     const currentUser = auth().currentUser;
-    if (!currentUser) return;
+    
+    // Don't set up listener if user is not authenticated
+    if (!currentUser) {
+      console.log('👤 No user, skipping incoming call listener setup');
+      return;
+    }
+
+    console.log('📞 Setting up incoming call listener for:', currentUser.uid);
 
     const unsubscribe = firestore()
       .collection('calls')
@@ -62,15 +69,18 @@ export function IncomingCallListener() {
           console.error('❌ Error in incoming call listener:', error);
           
           if (error.code === 'permission-denied') {
-            console.error('💡 Permission denied: Check your Firestore security rules');
+            console.error('💡 Permission denied: User may have signed out or lacks permissions');
           } else if (error.code) {
             console.error(`💡 Firebase error code: ${error.code}`);
           }
         }
       );
 
-    return unsubscribe;
-  }, []);
+    return () => {
+      console.log('🧹 Cleaning up incoming call listener');
+      unsubscribe();
+    };
+  }, []); // Empty dependency array - only run on mount/unmount
 
   const handleAccept = async () => {
     if (!incomingCall) return;
