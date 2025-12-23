@@ -64,7 +64,7 @@ class EncryptionService {
   }
 
   /**
-   * Encrypt a message for a recipient
+   * Encrypt a message for a recipient using asymmetric encryption
    */
   async encryptMessage(recipientPublicKey: string, plaintext: string): Promise<string> {
     this.ensureInitialized();
@@ -101,7 +101,7 @@ class EncryptionService {
   }
 
   /**
-   * Decrypt a message from a sender
+   * Decrypt a message from a sender using asymmetric encryption
    */
   async decryptMessage(senderPublicKey: string, ciphertext: string): Promise<string> {
     this.ensureInitialized();
@@ -134,6 +134,68 @@ class EncryptionService {
     } catch (error) {
       console.error('❌ Decryption failed:', error);
       throw new Error(`Failed to decrypt message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Encrypt a message for yourself using symmetric encryption
+   * This allows you to read your own sent messages
+   */
+  async encryptForSelf(plaintext: string): Promise<string> {
+    this.ensureInitialized();
+    
+    try {
+      // Use secret key directly for symmetric encryption
+      const nonce = this.getRandomBytes(nacl.secretbox.nonceLength);
+      const messageBytes = decodeUTF8(plaintext);
+      
+      // Use secretbox (symmetric encryption) with our secret key
+      const encrypted = nacl.secretbox(
+        messageBytes,
+        nonce,
+        this.keyPair!.secretKey
+      );
+      
+      // Combine nonce + encrypted data
+      const fullMessage = new Uint8Array(nonce.length + encrypted.length);
+      fullMessage.set(nonce);
+      fullMessage.set(encrypted, nonce.length);
+      
+      return encodeBase64(fullMessage);
+    } catch (error) {
+      console.error('❌ Self-encryption failed:', error);
+      throw new Error(`Failed to encrypt for self: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Decrypt a message encrypted for yourself
+   */
+  async decryptForSelf(ciphertext: string): Promise<string> {
+    this.ensureInitialized();
+    
+    try {
+      const fullMessage = decodeBase64(ciphertext);
+      
+      // Extract nonce and encrypted data
+      const nonce = fullMessage.slice(0, nacl.secretbox.nonceLength);
+      const encrypted = fullMessage.slice(nacl.secretbox.nonceLength);
+      
+      // Decrypt using secretbox
+      const decrypted = nacl.secretbox.open(
+        encrypted,
+        nonce,
+        this.keyPair!.secretKey
+      );
+      
+      if (!decrypted) {
+        throw new Error('Failed to decrypt self message');
+      }
+      
+      return encodeUTF8(decrypted);
+    } catch (error) {
+      console.error('❌ Self-decryption failed:', error);
+      throw new Error(`Failed to decrypt for self: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
