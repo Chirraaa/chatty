@@ -30,18 +30,27 @@ export default function RootLayout() {
       try {
         if (user) {
           console.log('🔐 Initializing encryption from local storage...');
-          // Try to initialize from local storage
-          // If keys don't exist locally, user will need to sign in again to restore from cloud
-          await authService.initializeEncryptionOnStartup(user.uid);
-          console.log('✅ Encryption initialized');
-          setInitialRoute('/(tabs)');
+          // Try to initialize from local storage only
+          const hasKeys = await authService.initializeEncryptionOnStartup(user.uid);
+          
+          if (hasKeys) {
+            // Keys found in local storage, proceed to app
+            console.log('✅ Encryption ready - going to app');
+            setInitialRoute('/(tabs)');
+          } else {
+            // No keys in local storage
+            // Don't sign out here - let the sign-in flow complete if active
+            // Just redirect to login so user can restore from cloud
+            console.warn('⚠️ No local encryption keys - redirecting to login');
+            setInitialRoute('/(auth)/login');
+          }
         } else {
           console.log('👤 No user, going to login');
           setInitialRoute('/(auth)/login');
         }
       } catch (error) {
         console.error('❌ Error in auth handler:', error);
-        setInitialRoute(user ? '/(tabs)' : '/(auth)/login');
+        setInitialRoute('/(auth)/login');
       } finally {
         setIsReady(true);
       }

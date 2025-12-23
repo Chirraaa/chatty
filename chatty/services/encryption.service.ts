@@ -8,6 +8,7 @@ class EncryptionService {
   private keyPair: nacl.BoxKeyPair | null = null;
   private userId: string | null = null;
   private initialized = false;
+  private initializing = false; // Lock to prevent concurrent initialization
 
   /**
    * Generate random bytes directly using crypto.getRandomValues
@@ -61,11 +62,71 @@ class EncryptionService {
   }
 
   /**
+   * Initialize from local storage only (for app startup)
+   * Returns true if keys were found, false if missing
+   * Does NOT generate new keys if missing
+   */
+  async initializeFromLocalOnly(userId: string): Promise<boolean> {
+    // If already initialized for this user, return true
+    if (this.initialized && this.userId === userId) return true;
+    
+    // If initialization is in progress, wait
+    if (this.initializing) {
+      console.log('⏳ Initialization already in progress, waiting...');
+      // Wait for initialization to complete (with timeout)
+      let attempts = 0;
+      while (this.initializing && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      return this.initialized && this.userId === userId;
+    }
+    
+    this.initializing = true;
+    this.userId = userId;
+    
+    try {
+      const storedKeys = await this.loadKeys(userId);
+      
+      if (storedKeys) {
+        this.keyPair = storedKeys;
+        this.initialized = true;
+        console.log('✅ Loaded existing encryption keys from local storage');
+        return true;
+      } else {
+        console.log('📭 No local encryption keys found');
+        this.initialized = false;
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error initializing from local storage:', error);
+      this.initialized = false;
+      return false;
+    } finally {
+      this.initializing = false;
+    }
+  }
+
+  /**
    * Initialize encryption service - now with password for cloud backup
+   * This is used during sign in/sign up when password is available
    */
   async initialize(userId: string, password?: string) {
+    // If already initialized for this user, return
     if (this.initialized && this.userId === userId) return;
     
+    // If initialization is in progress, wait
+    if (this.initializing) {
+      console.log('⏳ Initialization already in progress, waiting...');
+      let attempts = 0;
+      while (this.initializing && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      if (this.initialized && this.userId === userId) return;
+    }
+    
+    this.initializing = true;
     this.userId = userId;
     
     try {
@@ -88,27 +149,32 @@ class EncryptionService {
         this.keyPair = storedKeys;
         console.log('✅ Loaded existing encryption keys');
       } else {
-        // Generate new keys
-        console.log('🔑 Generating new encryption keys...');
-        const secretKey = this.getRandomBytes(32);
-        this.keyPair = nacl.box.keyPair.fromSecretKey(secretKey);
-        
-        // Save locally
-        await this.saveKeys(userId, this.keyPair);
-        
-        // If password provided, also backup to cloud
+        // Generate new keys ONLY if password is provided
         if (password) {
+          console.log('🔑 Generating new encryption keys...');
+          const secretKey = this.getRandomBytes(32);
+          this.keyPair = nacl.box.keyPair.fromSecretKey(secretKey);
+          
+          // Save locally
+          await this.saveKeys(userId, this.keyPair);
+          
+          // Backup to cloud with password
           await this.backupKeysToCloud(userId, this.keyPair, password);
           console.log('✅ Keys backed up to cloud');
+          
+          console.log('✅ Generated and saved new encryption keys');
+        } else {
+          console.error('❌ No keys found and no password provided - cannot generate keys');
+          throw new Error('Cannot initialize encryption without keys or password');
         }
-        
-        console.log('✅ Generated and saved new encryption keys');
       }
       
       this.initialized = true;
     } catch (error) {
       console.error('❌ Encryption initialization failed:', error);
       throw error;
+    } finally {
+      this.initializing = false;
     }
   }
 
@@ -276,9 +342,15 @@ class EncryptionService {
         });
       
       console.log('💾 Private key backed up to cloud');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to backup keys to cloud:', error);
-      // Don't throw - backup failure shouldn't prevent login
+      
+      // Check if it's a permission error
+      if (error.code === 'firestore/permission-denied') {
+        console.error('❌ Permission denied - cannot backup keys');
+        // Don't throw - this shouldn't prevent login, but warn user
+      }
+      // Don't throw on other errors either - backup failure shouldn't prevent usage
     }
   }
 
@@ -288,6 +360,12 @@ class EncryptionService {
   private async loadKeysFromCloud(userId: string, password: string): Promise<nacl.BoxKeyPair | null> {
     try {
       const userDoc = await firestore().collection('users').doc(userId).get();
+      
+      if (!userDoc.exists) {
+        console.log('📭 User document not found');
+        return null;
+      }
+      
       const data = userDoc.data();
       
       if (!data?.encryptedPrivateKey || !data?.keySalt) {
@@ -312,7 +390,14 @@ class EncryptionService {
       
       console.log('📬 Loaded keys from cloud backup');
       return keyPair;
-    } catch (error) {
+    } catch (error: any) {
+      // Check if it's a permission error
+      if (error.code === 'firestore/permission-denied') {
+        console.error('❌ Permission denied accessing cloud backup');
+        // This likely means user was signed out during the process
+        throw new Error('Cannot access encryption keys - authentication issue');
+      }
+      
       console.error('❌ Error loading keys from cloud:', error);
       return null;
     }

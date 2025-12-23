@@ -208,13 +208,23 @@ class AuthService {
     /**
      * Re-initialize encryption after app restart
      * This tries to load from local storage only (no password available)
+     * IMPORTANT: Does NOT generate new keys if missing - user must sign in again
      */
-    async initializeEncryptionOnStartup(userId: string) {
+    async initializeEncryptionOnStartup(userId: string): Promise<boolean> {
         try {
-            await encryptionService.initialize(userId);
+            // Try to load from local storage only - no password means no cloud restore
+            const hasKeys = await encryptionService.initializeFromLocalOnly(userId);
+            
+            if (hasKeys) {
+                console.log('✅ Encryption initialized from local storage');
+                return true;
+            } else {
+                console.warn('⚠️ No local encryption keys - user must sign in again');
+                return false;
+            }
         } catch (error) {
             console.warn('⚠️ Could not initialize encryption on startup:', error);
-            // This is OK - user will need to sign in again to restore from cloud
+            return false;
         }
     }
 }
