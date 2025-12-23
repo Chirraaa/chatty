@@ -1,8 +1,16 @@
 // app/chat/[userId].tsx
 import { useState, useEffect, useRef } from 'react';
-import { StyleSheet, FlatList, KeyboardAvoidingView, Platform, View, Alert, TouchableOpacity } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
-import { Layout, Modal, Card, Text, Input, Button } from '@ui-kitten/components';
+import {
+  StyleSheet,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  View,
+  Alert,
+  TouchableOpacity,
+} from 'react-native';
+import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { Layout, Text, Input, Button, Modal, Card } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatInput } from '@/components/chat-input';
 import { MessageBubble } from '@/components/message-bubble';
@@ -14,94 +22,214 @@ export default function ChatScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [customNickname, setCustomNickname] = useState<string | null>(null);
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
     if (!userId) return;
-    authService.getUserProfile(userId).then(setUserProfile);
+
+    loadUserProfile();
     
-    const unsubscribe = messageService.subscribeToMessages(userId, (newMsgs) => {
-      setMessages(newMsgs);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
+    // Subscribe to messages
+    const unsubscribe = messageService.subscribeToMessages(
+      userId,
+      (newMessages) => {
+        console.log('📩 Messages updated:', newMessages.length);
+        setMessages(newMessages);
+        // Auto-scroll to end when new messages arrive
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+
     return () => unsubscribe();
   }, [userId]);
 
-  const onSendMessage = async (text: string) => {
-    const currentUser = authService.getCurrentUser();
-    if (!currentUser) return;
-
-    const tempId = `temp-${Date.now()}`;
-    const optimisticMsg: Message = {
-      id: tempId,
-      senderId: currentUser.uid,
-      receiverId: userId,
-      type: 'text',
-      decryptedContent: text,
-      timestamp: new Date(),
-      isPending: true,
-    };
-
-    setMessages(prev => [...prev, optimisticMsg]); // Instant UI update.tsx]
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 0);
-
+  const loadUserProfile = async () => {
     try {
-      await messageService.sendTextMessage(userId, text);
+      const profile = await authService.getUserProfile(userId);
+      setUserProfile(profile);
+      
+      const nickname = await authService.getCustomNickname(userId);
+      setCustomNickname(nickname);
+      setNicknameInput(nickname || profile?.username || '');
     } catch (error) {
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-      Alert.alert('Error', 'Failed to send message');
+      console.error('Error loading profile:', error);
     }
   };
 
-  const onSendImage = async (uri: string) => {
-    const currentUser = authService.getCurrentUser();
-    if (!currentUser) return;
-
-    const tempId = `temp-img-${Date.now()}`;
-    const optimisticMsg: Message = {
-      id: tempId,
-      senderId: currentUser.uid,
-      receiverId: userId,
-      type: 'image',
-      decryptedImageUri: uri, // Use local URI immediately.tsx]
-      timestamp: new Date(),
-      isPending: true,
-    };
-
-    setMessages(prev => [...prev, optimisticMsg]);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 0);
-
+  const handleSaveNickname = async () => {
     try {
-      await messageService.sendImageMessage(userId, uri);
+      await authService.setCustomNickname(userId, nicknameInput.trim());
+      setCustomNickname(nicknameInput.trim());
+      setEditingNickname(false);
+      Alert.alert('Success', 'Custom nickname saved!');
     } catch (error) {
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-      Alert.alert('Error', 'Failed to send image');
+      console.error('Error saving nickname:', error);
+      Alert.alert('Error', 'Failed to save nickname');
     }
   };
+
+  const handleVoiceCall = async () => {
+    try {
+      const callId = await callService.createCall(userId, false);
+      router.push(`/call/${callId}`);
+    } catch (error) {
+      console.error('Error starting voice call:', error);
+      Alert.alert('Call Failed', 'Unable to start voice call');
+    }
+  };
+
+  const handleVideoCall = async () => {
+    try {
+      const callId = await callService.createCall(userId, true);
+      router.push(`/call/${callId}`);
+    } catch (error) {
+      console.error('Error starting video call:', error);
+      Alert.alert('Call Failed', 'Unable to start video call');
+    }
+  };
+
+  const displayName = customNickname || userProfile?.username || 'Chat';
 
   return (
     <>
-      <Stack.Screen options={{ title: userProfile?.username || 'Chat' }} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container} keyboardVerticalOffset={90}>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: displayName,
+          headerStyle: {
+            backgroundColor: '#222B45',
+          },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: {
+            color: '#FFFFFF',
+          },
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={handleVoiceCall} style={styles.headerButton}>
+                <Ionicons name="call" size={22} color="#3366FF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleVideoCall} style={styles.headerButton}>
+                <Ionicons name="videocam" size={22} color="#3366FF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setEditingNickname(true)} style={styles.headerButton}>
+                <Ionicons name="create-outline" size={22} color="#3366FF" />
+              </TouchableOpacity>
+            </View>
+          ),
+        }}
+      />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+        keyboardVerticalOffset={100}
+      >
         <Layout style={styles.container}>
+          {/* Nickname Editor Modal */}
+          <Modal
+            visible={editingNickname}
+            backdropStyle={styles.backdrop}
+            onBackdropPress={() => setEditingNickname(false)}
+          >
+            <Card disabled={true} style={styles.modal}>
+              <Text category='h6' style={styles.modalTitle}>
+                Set Custom Nickname
+              </Text>
+              
+              <Input
+                placeholder="Enter nickname..."
+                value={nicknameInput}
+                onChangeText={setNicknameInput}
+                autoFocus
+                style={styles.nicknameInput}
+              />
+
+              <View style={styles.modalActions}>
+                <Button
+                  appearance='outline'
+                  status='basic'
+                  style={styles.modalButton}
+                  onPress={() => {
+                    setEditingNickname(false);
+                    setNicknameInput(customNickname || userProfile?.username || '');
+                  }}
+                >
+                  Cancel
+                </Button>
+                
+                <Button
+                  style={styles.modalButton}
+                  onPress={handleSaveNickname}
+                >
+                  Save
+                </Button>
+              </View>
+            </Card>
+          </Modal>
+
+          {/* Messages */}
           <FlatList
             ref={flatListRef}
             data={messages}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={item.isPending ? { opacity: 0.6 } : {}}>
-                <MessageBubble message={item} />
-              </View>
-            )}
+            renderItem={({ item }) => <MessageBubble message={item} />}
             contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
           />
-          <ChatInput receiverId={userId} onSend={onSendMessage} onImageSend={onSendImage} />
+
+          {/* Input */}
+          <ChatInput
+            receiverId={userId}
+            onSendComplete={() => {
+              console.log('📤 Message sent, scrolling to end');
+              setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+              }, 100);
+            }}
+          />
         </Layout>
       </KeyboardAvoidingView>
     </>
   );
 }
 
-const styles = StyleSheet.create({ container: { flex: 1 }, messagesList: { paddingVertical: 8 } });
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginRight: 8,
+  },
+  headerButton: {
+    padding: 8,
+  },
+  messagesList: {
+    paddingVertical: 8,
+  },
+  backdrop: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modal: {
+    width: 320,
+  },
+  modalTitle: {
+    marginBottom: 16,
+  },
+  nicknameInput: {
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+  },
+});
