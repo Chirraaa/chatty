@@ -1,4 +1,4 @@
-// app/chat/[userId].tsx - Fixed TypeScript error
+// app/chat/[userId].tsx - Fixed keyboard layout for Android
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -20,6 +20,7 @@ import { MessageBubble } from '@/components/message-bubble';
 import messageService, { Message } from '@/services/message.service';
 import authService from '@/services/auth.service';
 import callService from '@/services/call.service';
+import chatSettingsService from '@/services/chat-settings.service';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,12 +29,14 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [customNickname, setCustomNickname] = useState<string | null>(null);
+  const [backgroundColor, setBackgroundColor] = useState('#1A1A1A');
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
     if (!userId) return;
 
     loadUserProfile();
+    loadChatSettings();
     
     const unsubscribe = messageService.subscribeToMessages(
       userId,
@@ -60,6 +63,15 @@ export default function ChatScreen() {
     }
   };
 
+  const loadChatSettings = async () => {
+    try {
+      const settings = await chatSettingsService.getChatSettings(userId);
+      setBackgroundColor(settings.backgroundColor);
+    } catch (error) {
+      console.error('Error loading chat settings:', error);
+    }
+  };
+
   const handleVoiceCall = async () => {
     try {
       const callId = await callService.createCall(userId, false);
@@ -81,12 +93,7 @@ export default function ChatScreen() {
   };
 
   const handleHeaderPress = () => {
-    // Show user info alert or modal instead of navigating to non-existent route
-    Alert.alert(
-      userProfile?.username || 'User',
-      customNickname ? `@${userProfile?.username}\nNickname: ${customNickname}` : `@${userProfile?.username}`,
-      [{ text: 'OK' }]
-    );
+    router.push(`/contact-profile/${userId}`);
   };
 
   const displayName = customNickname || userProfile?.username || 'Chat';
@@ -95,7 +102,7 @@ export default function ChatScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor }]}>
         {/* Custom Header */}
         <LinearGradient
           colors={['#667eea', '#764ba2']}
@@ -142,12 +149,8 @@ export default function ChatScreen() {
           </View>
         </LinearGradient>
 
-        {/* Messages */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.content}
-          keyboardVerticalOffset={0}
-        >
+        {/* Messages - No KeyboardAvoidingView wrapper */}
+        <View style={styles.content}>
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -172,7 +175,7 @@ export default function ChatScreen() {
               }, 100);
             }}
           />
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </>
   );
@@ -181,7 +184,6 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
@@ -248,5 +250,6 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingVertical: 12,
     paddingHorizontal: 4,
+    paddingBottom: 80, // Extra padding for input bar
   },
 });

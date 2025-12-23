@@ -1,4 +1,4 @@
-// app/(tabs)/_layout.tsx
+// app/(tabs)/_layout.tsx - Dark theme tabs
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,13 +7,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#3366FF',
-        tabBarInactiveTintColor: '#8F9BB3',
+        tabBarActiveTintColor: '#667eea',
+        tabBarInactiveTintColor: '#666',
         tabBarStyle: {
-          backgroundColor: '#222B45',
-          borderTopColor: '#1A2138',
+          backgroundColor: '#1C1C1E',
+          borderTopColor: '#2C2C2E',
           borderTopWidth: 1,
-          height: 120,
+          height: 60,
           paddingBottom: 8,
           paddingTop: 8,
         },

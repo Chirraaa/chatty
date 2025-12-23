@@ -1,6 +1,6 @@
-// app/(auth)/signup.tsx - Simplified
+// app/(auth)/signup.tsx - Dark mode
 import { useState } from 'react';
-import { StyleSheet, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
+import { StyleSheet, KeyboardAvoidingView, Platform, Alert, ScrollView, View } from 'react-native';
 import { Link, router } from 'expo-router';
 import { Layout, Text, Input, Button } from '@ui-kitten/components';
 import authService from '@/services/auth.service';
@@ -75,7 +75,7 @@ export default function SignupScreen() {
           {/* Header */}
           <Layout style={styles.header}>
             <Text category='h1' style={styles.title}>Create Account</Text>
-            <Text category='s1' appearance='hint'>Join and start chatting securely</Text>
+            <Text category='s1' appearance='hint' style={styles.subtitle}>Join and start chatting securely</Text>
           </Layout>
 
           {/* Form */}
@@ -132,12 +132,12 @@ export default function SignupScreen() {
               {loading ? 'Creating Account...' : 'Create Account'}
             </Button>
 
-            <Layout style={styles.linkContainer}>
+            <View style={styles.linkContainer}>
               <Text appearance='hint'>Already have an account? </Text>
               <Link href="/(auth)/login" asChild>
                 <Text status='primary' style={styles.link}>Sign In</Text>
               </Link>
-            </Layout>
+            </View>
           </Layout>
         </Layout>
       </ScrollView>
@@ -150,18 +150,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
+    backgroundColor: '#1A1A1A',
   },
   header: {
     marginBottom: 32,
+    backgroundColor: 'transparent',
   },
   title: {
     marginBottom: 8,
+    color: '#FFFFFF',
+  },
+  subtitle: {
+    color: '#8E8E93',
   },
   form: {
     width: '100%',
+    backgroundColor: 'transparent',
   },
   input: {
     marginBottom: 16,
+    backgroundColor: '#2C2C2E',
   },
   button: {
     marginTop: 8,
@@ -171,6 +179,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   link: {
     fontWeight: '600',

@@ -31,7 +31,6 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
 .env
 
 # typescript
@@ -43,3 +42,4 @@ app-example
 /ios
 /android
 .expo/
+.env

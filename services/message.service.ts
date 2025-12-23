@@ -1,4 +1,4 @@
-// services/message.service.ts - With dual encryption (sender + receiver)
+// services/message.service.ts - With edit and delete
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import imageService from './image.service';
@@ -14,6 +14,10 @@ export interface Message {
     timestamp: Date;
     encrypted?: boolean;
     decryptionError?: boolean;
+    edited?: boolean;
+    editedAt?: Date;
+    deletedForEveryone?: boolean;
+    deletedForMe?: boolean;
 }
 
 class MessageService {
@@ -25,13 +29,9 @@ class MessageService {
             const currentUser = auth().currentUser;
             if (!currentUser) throw new Error('Not authenticated');
 
-            // Get recipient's public key
             const recipientPublicKey = await encryptionService.getRecipientPublicKey(receiverId);
-
-            // Get my own public key (to encrypt for myself)
             const myPublicKey = encryptionService.getPublicKey();
 
-            // Encrypt the message TWICE
             const encryptedForReceiver = await encryptionService.encryptMessage(recipientPublicKey, text);
             const encryptedForSender = await encryptionService.encryptMessage(myPublicKey, text);
 
@@ -63,14 +63,9 @@ class MessageService {
             if (!currentUser) throw new Error('Not authenticated');
 
             const base64Data = await imageService.getBase64(imageUri);
-
-            // Get recipient's public key
             const recipientPublicKey = await encryptionService.getRecipientPublicKey(receiverId);
-
-            // Get my own public key (to encrypt for myself)
             const myPublicKey = encryptionService.getPublicKey();
 
-            // Encrypt the image data TWICE
             const encryptedForReceiver = await encryptionService.encryptMessage(recipientPublicKey, base64Data);
             const encryptedForSender = await encryptionService.encryptMessage(myPublicKey, base64Data);
 
@@ -94,6 +89,123 @@ class MessageService {
     }
 
     /**
+     * Edit a text message
+     */
+    async editMessage(messageId: string, newText: string): Promise<void> {
+        try {
+            const currentUser = auth().currentUser;
+            if (!currentUser) throw new Error('Not authenticated');
+
+            // Get message to verify ownership
+            const messageDoc = await firestore().collection('messages').doc(messageId).get();
+            const messageData = messageDoc.data();
+
+            if (!messageData || messageData.senderId !== currentUser.uid) {
+                throw new Error('Cannot edit this message');
+            }
+
+            if (messageData.type !== 'text') {
+                throw new Error('Can only edit text messages');
+            }
+
+            // Re-encrypt the new text
+            const recipientPublicKey = await encryptionService.getRecipientPublicKey(messageData.receiverId);
+            const myPublicKey = encryptionService.getPublicKey();
+
+            const encryptedForReceiver = await encryptionService.encryptMessage(recipientPublicKey, newText);
+            const encryptedForSender = await encryptionService.encryptMessage(myPublicKey, newText);
+
+            await firestore().collection('messages').doc(messageId).update({
+                encryptedForReceiver,
+                encryptedForSender,
+                edited: true,
+                editedAt: firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (error) {
+            console.error('Error editing message:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete message for me only
+     */
+    async deleteMessageForMe(messageId: string): Promise<void> {
+        try {
+            const currentUser = auth().currentUser;
+            if (!currentUser) throw new Error('Not authenticated');
+
+            await firestore().collection('messages').doc(messageId).update({
+                [`deletedFor_${currentUser.uid}`]: true,
+            });
+        } catch (error) {
+            console.error('Error deleting message for me:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete message for everyone (only sender can do this)
+     */
+    async deleteMessageForEveryone(messageId: string): Promise<void> {
+        try {
+            const currentUser = auth().currentUser;
+            if (!currentUser) throw new Error('Not authenticated');
+
+            const messageDoc = await firestore().collection('messages').doc(messageId).get();
+            const messageData = messageDoc.data();
+
+            if (!messageData || messageData.senderId !== currentUser.uid) {
+                throw new Error('Cannot delete this message for everyone');
+            }
+
+            await firestore().collection('messages').doc(messageId).update({
+                deletedForEveryone: true,
+                deletedAt: firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (error) {
+            console.error('Error deleting message for everyone:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get all media messages in a conversation
+     */
+    async getMediaMessages(otherUserId: string): Promise<Message[]> {
+        try {
+            const currentUser = auth().currentUser;
+            if (!currentUser) throw new Error('Not authenticated');
+
+            const sentImages = await firestore()
+                .collection('messages')
+                .where('senderId', '==', currentUser.uid)
+                .where('receiverId', '==', otherUserId)
+                .where('type', '==', 'image')
+                .get();
+
+            const receivedImages = await firestore()
+                .collection('messages')
+                .where('senderId', '==', otherUserId)
+                .where('receiverId', '==', currentUser.uid)
+                .where('type', '==', 'image')
+                .get();
+
+            const allDocs = [...sentImages.docs, ...receivedImages.docs];
+            const messages = await Promise.all(
+                allDocs.map(doc => this.decryptMessage(doc.data(), doc.id, currentUser.uid))
+            );
+
+            return messages
+                .filter(msg => !msg.decryptionError && !msg.deletedForEveryone)
+                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        } catch (error) {
+            console.error('Error getting media messages:', error);
+            return [];
+        }
+    }
+
+    /**
      * Decrypt a single message
      */
     private async decryptMessage(data: any, messageId: string, currentUserId: string): Promise<Message> {
@@ -105,9 +217,12 @@ class MessageService {
             timestamp: data.timestamp?.toDate() || new Date(),
             encrypted: data.encrypted || false,
             decryptionError: false,
+            edited: data.edited || false,
+            editedAt: data.editedAt?.toDate(),
+            deletedForEveryone: data.deletedForEveryone || false,
+            deletedForMe: data[`deletedFor_${currentUserId}`] || false,
         };
 
-        // If message is not encrypted (old messages), return as-is
         if (!data.encrypted) {
             if (data.type === 'text') {
                 message.content = data.content;
@@ -117,53 +232,44 @@ class MessageService {
             return message;
         }
 
-        // Try to decrypt
         try {
             const isSentByMe = data.senderId === currentUserId;
 
             if (data.type === 'text') {
                 if (isSentByMe) {
-                    // I sent this - decrypt the copy encrypted for me
                     if (data.encryptedForSender) {
                         const myPublicKey = encryptionService.getPublicKey();
                         message.content = await encryptionService.decryptMessage(myPublicKey, data.encryptedForSender);
                     } else if (data.encryptedContent) {
-                        // Fallback for old format
                         const senderPublicKey = await encryptionService.getRecipientPublicKey(data.senderId);
                         message.content = await encryptionService.decryptMessage(senderPublicKey, data.encryptedContent);
                     }
                 } else {
-                    // I received this - decrypt the copy encrypted for me
                     if (data.encryptedForReceiver) {
                         const senderPublicKey = await encryptionService.getRecipientPublicKey(data.senderId);
                         message.content = await encryptionService.decryptMessage(senderPublicKey, data.encryptedForReceiver);
                     } else if (data.encryptedContent) {
-                        // Fallback for old format
                         const senderPublicKey = await encryptionService.getRecipientPublicKey(data.senderId);
                         message.content = await encryptionService.decryptMessage(senderPublicKey, data.encryptedContent);
                     }
                 }
             } else if (data.type === 'image') {
                 if (isSentByMe) {
-                    // I sent this - decrypt the copy encrypted for me
                     if (data.encryptedImageForSender) {
                         const myPublicKey = encryptionService.getPublicKey();
                         const decryptedBase64 = await encryptionService.decryptMessage(myPublicKey, data.encryptedImageForSender);
                         message.imageData = `data:image/jpeg;base64,${decryptedBase64}`;
                     } else if (data.encryptedImageData) {
-                        // Fallback
                         const senderPublicKey = await encryptionService.getRecipientPublicKey(data.senderId);
                         const decryptedBase64 = await encryptionService.decryptMessage(senderPublicKey, data.encryptedImageData);
                         message.imageData = `data:image/jpeg;base64,${decryptedBase64}`;
                     }
                 } else {
-                    // I received this - decrypt the copy encrypted for me
                     if (data.encryptedImageForReceiver) {
                         const senderPublicKey = await encryptionService.getRecipientPublicKey(data.senderId);
                         const decryptedBase64 = await encryptionService.decryptMessage(senderPublicKey, data.encryptedImageForReceiver);
                         message.imageData = `data:image/jpeg;base64,${decryptedBase64}`;
                     } else if (data.encryptedImageData) {
-                        // Fallback
                         const senderPublicKey = await encryptionService.getRecipientPublicKey(data.senderId);
                         const decryptedBase64 = await encryptionService.decryptMessage(senderPublicKey, data.encryptedImageData);
                         message.imageData = `data:image/jpeg;base64,${decryptedBase64}`;
@@ -195,7 +301,6 @@ class MessageService {
             const processedMessageIds = new Set<string>();
 
             const processMessages = async (snapshot: any) => {
-                // Process only new/changed documents
                 const newMessages = await Promise.all(
                     snapshot.docs
                         .filter((doc: any) => !processedMessageIds.has(doc.id))
@@ -205,15 +310,13 @@ class MessageService {
                         })
                 );
 
-                // Merge with existing messages
                 const messageMap = new Map<string, Message>();
                 allMessages.forEach((msg: Message) => messageMap.set(msg.id, msg));
                 newMessages.forEach((msg: Message) => messageMap.set(msg.id, msg));
 
-                // Update messages list and sort by timestamp
-                allMessages = Array.from(messageMap.values()).sort(
-                    (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
-                );
+                allMessages = Array.from(messageMap.values())
+                    .filter(msg => !msg.deletedForMe && !msg.deletedForEveryone)
+                    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
                 onUpdate(allMessages);
             };

@@ -1,8 +1,10 @@
-// components/message-bubble.tsx - Clean minimal design
-import { StyleSheet, View, Image, Dimensions, TouchableOpacity } from 'react-native';
+// components/message-bubble.tsx - With edit/delete and proper sizing
+import { StyleSheet, View, Image, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { Text } from '@ui-kitten/components';
+import { router } from 'expo-router';
 import { auth } from '@/config/firebase';
 import { Message } from '@/services/message.service';
+import messageService from '@/services/message.service';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface MessageBubbleProps {
@@ -27,8 +29,119 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
     });
   };
 
+  const handleLongPress = () => {
+    if (message.decryptionError || message.deletedForEveryone) return;
+
+    const options: string[] = [];
+    
+    if (isSentByMe && message.type === 'text') {
+      options.push('Edit');
+    }
+    
+    if (isSentByMe) {
+      options.push('Delete for Everyone');
+    }
+    
+    options.push('Delete for Me');
+    options.push('Cancel');
+
+    Alert.alert(
+      'Message Options',
+      '',
+      [
+        ...(isSentByMe && message.type === 'text' ? [{
+          text: 'Edit',
+          onPress: () => handleEdit(),
+        }] : []),
+        ...(isSentByMe ? [{
+          text: 'Delete for Everyone',
+          onPress: () => handleDeleteForEveryone(),
+          style: 'destructive' as const,
+        }] : []),
+        {
+          text: 'Delete for Me',
+          onPress: () => handleDeleteForMe(),
+          style: 'destructive' as const,
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel' as const,
+        },
+      ]
+    );
+  };
+
+  const handleEdit = () => {
+    Alert.prompt(
+      'Edit Message',
+      'Enter new message:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: async (newText : any) => {
+            if (newText && newText.trim()) {
+              try {
+                await messageService.editMessage(message.id, newText.trim());
+              } catch (error) {
+                Alert.alert('Error', 'Failed to edit message');
+              }
+            }
+          },
+        },
+      ],
+      'plain-text',
+      message.content
+    );
+  };
+
+  const handleDeleteForMe = async () => {
+    try {
+      await messageService.deleteMessageForMe(message.id);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete message');
+    }
+  };
+
+  const handleDeleteForEveryone = async () => {
+    try {
+      await messageService.deleteMessageForEveryone(message.id);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete message');
+    }
+  };
+
+  const handleImagePress = () => {
+    if (message.type === 'image' && message.imageData && !message.decryptionError) {
+      router.push({
+        pathname: '/image-viewer/[messageId]',
+        params: { 
+          messageId: message.id,
+          imageData: message.imageData,
+        },
+      });
+    }
+  };
+
+  if (message.deletedForEveryone) {
+    return (
+      <View style={[styles.container, isSentByMe ? styles.sentContainer : styles.receivedContainer]}>
+        <View style={styles.bubbleContainer}>
+          <View style={[styles.bubble, styles.deletedBubble]}>
+            <Text style={styles.deletedText}>🚫 This message was deleted</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.container, isSentByMe ? styles.sentContainer : styles.receivedContainer]}>
+    <TouchableOpacity
+      style={[styles.container, isSentByMe ? styles.sentContainer : styles.receivedContainer]}
+      onLongPress={handleLongPress}
+      activeOpacity={0.9}
+      delayLongPress={500}
+    >
       {/* Sender Info */}
       {!isSentByMe && showSenderInfo && (
         <View style={styles.senderInfo}>
@@ -77,12 +190,24 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
                 🔒
               </Text>
             )}
+
+            {message.edited && !message.decryptionError && (
+              <Text style={[styles.editedBadge, isSentByMe ? styles.sentText : styles.receivedText]}>
+                (edited)
+              </Text>
+            )}
           </View>
         )}
 
         {/* Image Message */}
         {message.type === 'image' && message.imageData && !message.decryptionError && (
-          <TouchableOpacity style={styles.imageBubble} activeOpacity={0.9}>
+          <TouchableOpacity 
+            style={styles.imageBubble} 
+            activeOpacity={0.9}
+            onPress={handleImagePress}
+            onLongPress={handleLongPress}
+            delayLongPress={500}
+          >
             <Image
               source={{ uri: message.imageData }}
               style={styles.image}
@@ -113,7 +238,7 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
           {formatTime(message.timestamp)}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -121,8 +246,8 @@ const styles = StyleSheet.create({
   container: {
     marginVertical: 2,
     marginHorizontal: 12,
-    maxWidth: MAX_WIDTH,
     flexDirection: 'row',
+    alignSelf: 'flex-start',
   },
   sentContainer: {
     alignSelf: 'flex-end',
@@ -145,35 +270,42 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#E1E8ED',
+    backgroundColor: '#333',
     alignItems: 'center',
     justifyContent: 'center',
   },
   senderAvatarText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#657786',
+    color: '#FFFFFF',
   },
   bubbleContainer: {
-    flex: 1,
+    maxWidth: MAX_WIDTH,
   },
   bubble: {
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     overflow: 'hidden',
+    alignSelf: 'flex-start',
   },
   sentBubble: {
     borderBottomRightRadius: 4,
+    alignSelf: 'flex-end',
   },
   receivedBubble: {
-    backgroundColor: '#F7F9FA',
+    backgroundColor: '#2C2C2E',
     borderBottomLeftRadius: 4,
+    alignSelf: 'flex-start',
   },
   errorBubble: {
-    backgroundColor: '#FEE',
+    backgroundColor: '#3A1A1A',
     borderWidth: 1,
-    borderColor: '#FCC',
+    borderColor: '#5A2A2A',
+  },
+  deletedBubble: {
+    backgroundColor: '#2C2C2E',
+    opacity: 0.6,
   },
   messageText: {
     fontSize: 16,
@@ -183,11 +315,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   receivedText: {
-    color: '#14171A',
+    color: '#FFFFFF',
   },
   errorText: {
-    color: '#E0245E',
+    color: '#FF6B6B',
     fontSize: 14,
+  },
+  deletedText: {
+    color: '#888888',
+    fontSize: 14,
+    fontStyle: 'italic',
   },
   encryptedBadge: {
     position: 'absolute',
@@ -199,14 +336,20 @@ const styles = StyleSheet.create({
   encryptedBadgeSent: {
     opacity: 0.8,
   },
+  editedBadge: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 4,
+    opacity: 0.7,
+  },
   imageBubble: {
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#F7F9FA',
+    backgroundColor: '#2C2C2E',
   },
   image: {
-    width: MAX_WIDTH - 32,
-    height: MAX_WIDTH - 32,
+    width: 200,
+    height: 200,
     borderRadius: 16,
   },
   imageEncryptedBadge: {
@@ -225,7 +368,7 @@ const styles = StyleSheet.create({
   timestamp: {
     marginTop: 4,
     fontSize: 11,
-    color: '#657786',
+    color: '#8E8E93',
   },
   sentTimestamp: {
     textAlign: 'right',

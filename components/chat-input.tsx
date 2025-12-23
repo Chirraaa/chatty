@@ -1,7 +1,8 @@
-// components/chat-input.tsx - Clean minimal input
+// components/chat-input.tsx - Fixed positioning for Android
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, Dimensions } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import imageService from '@/services/image.service';
 import messageService from '@/services/message.service';
 
@@ -15,6 +16,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const handleSend = async () => {
     if (message.trim() && !sending) {
@@ -52,47 +54,52 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity 
-        onPress={handlePickImage} 
-        style={styles.iconButton}
-        disabled={sending}
-      >
-        <Ionicons 
-          name="add-circle" 
-          size={32} 
-          color={sending ? "#AAB8C2" : "#667eea"} 
-        />
-      </TouchableOpacity>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <TouchableOpacity 
+          onPress={handlePickImage} 
+          style={styles.iconButton}
+          disabled={sending}
+        >
+          <Ionicons 
+            name="add-circle" 
+            size={32} 
+            color={sending ? "#666" : "#667eea"} 
+          />
+        </TouchableOpacity>
 
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Message..."
-          placeholderTextColor="#AAB8C2"
-          value={message}
-          onChangeText={setMessage}
-          multiline={true}
-          maxLength={1000}
-          editable={!sending}
-        />
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Message..."
+            placeholderTextColor="#666"
+            value={message}
+            onChangeText={setMessage}
+            multiline={true}
+            maxLength={1000}
+            editable={!sending}
+          />
+        </View>
+
+        <TouchableOpacity 
+          onPress={handleSend}
+          disabled={!message.trim() || sending}
+          style={[
+            styles.sendButton,
+            (!message.trim() || sending) && styles.sendButtonDisabled
+          ]}
+        >
+          <Ionicons 
+            name="arrow-up" 
+            size={24} 
+            color="#FFFFFF" 
+          />
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity 
-        onPress={handleSend}
-        disabled={!message.trim() || sending}
-        style={[
-          styles.sendButton,
-          (!message.trim() || sending) && styles.sendButtonDisabled
-        ]}
-      >
-        <Ionicons 
-          name="arrow-up" 
-          size={24} 
-          color="#FFFFFF" 
-        />
-      </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -101,10 +108,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#FFFFFF',
+    paddingTop: 8,
+    backgroundColor: '#1C1C1E',
     borderTopWidth: 1,
-    borderTopColor: '#E1E8ED',
+    borderTopColor: '#2C2C2E',
   },
   iconButton: {
     padding: 4,
@@ -113,7 +120,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flex: 1,
     marginHorizontal: 8,
-    backgroundColor: '#F7F9FA',
+    backgroundColor: '#2C2C2E',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -121,7 +128,7 @@ const styles = StyleSheet.create({
   },
   input: {
     fontSize: 16,
-    color: '#14171A',
+    color: '#FFFFFF',
     maxHeight: 80,
   },
   sendButton: {
@@ -134,6 +141,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sendButtonDisabled: {
-    backgroundColor: '#AAB8C2',
+    backgroundColor: '#444',
   },
 });

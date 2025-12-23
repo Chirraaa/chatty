@@ -1,6 +1,6 @@
-// app/(auth)/login.tsx - Simplified
+// app/(auth)/login.tsx - Dark mode
 import { useState } from 'react';
-import { StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { StyleSheet, KeyboardAvoidingView, Platform, Alert, View } from 'react-native';
 import { Link } from 'expo-router';
 import { Layout, Text, Input, Button } from '@ui-kitten/components';
 import authService from '@/services/auth.service';
@@ -19,7 +19,6 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await authService.signIn(email.trim(), password);
-      // Success! Navigation will be handled automatically by _layout.tsx
     } catch (error: any) {
       console.error('Login error:', error);
       
@@ -49,7 +48,7 @@ export default function LoginScreen() {
         {/* Header */}
         <Layout style={styles.header}>
           <Text category='h1' style={styles.title}>Welcome Back</Text>
-          <Text category='s1' appearance='hint'>Sign in to continue</Text>
+          <Text category='s1' appearance='hint' style={styles.subtitle}>Sign in to continue</Text>
         </Layout>
 
         {/* Form */}
@@ -85,12 +84,12 @@ export default function LoginScreen() {
             {loading ? 'Signing In...' : 'Sign In'}
           </Button>
 
-          <Layout style={styles.linkContainer}>
+          <View style={styles.linkContainer}>
             <Text appearance='hint'>Don't have an account? </Text>
             <Link href="/(auth)/signup" asChild>
               <Text status='primary' style={styles.link}>Sign Up</Text>
             </Link>
-          </Layout>
+          </View>
         </Layout>
       </Layout>
     </KeyboardAvoidingView>
@@ -102,18 +101,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
+    backgroundColor: '#1A1A1A',
   },
   header: {
     marginBottom: 32,
+    backgroundColor: 'transparent',
   },
   title: {
     marginBottom: 8,
+    color: '#FFFFFF',
+  },
+  subtitle: {
+    color: '#8E8E93',
   },
   form: {
     width: '100%',
+    backgroundColor: 'transparent',
   },
   input: {
     marginBottom: 16,
+    backgroundColor: '#2C2C2E',
   },
   button: {
     marginTop: 8,
@@ -123,6 +130,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   link: {
     fontWeight: '600',

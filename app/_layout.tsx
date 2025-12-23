@@ -1,4 +1,4 @@
-// app/_layout.tsx - With E2EE initialization
+// app/_layout.tsx - Full Dark Mode
 // CRITICAL: Polyfills MUST be imported first
 import '../polyfills';
 
@@ -64,9 +64,9 @@ export default function RootLayout() {
   if (!isReady) {
     return (
       <ApplicationProvider {...eva} theme={eva.dark}>
-        <Layout style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#3366FF" />
-          <Text category="s1" style={{ marginTop: 16 }}>Loading...</Text>
+        <Layout style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1A1A1A' }}>
+          <ActivityIndicator size="large" color="#667eea" />
+          <Text category="s1" style={{ marginTop: 16, color: '#FFFFFF' }}>Loading...</Text>
         </Layout>
       </ApplicationProvider>
     );
@@ -80,6 +80,8 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[userId]" />
         <Stack.Screen name="call/[callId]" />
+        <Stack.Screen name="contact-profile/[userId]" />
+        <Stack.Screen name="image-viewer/[messageId]" />
       </Stack>
       <IncomingCallListener />
     </ApplicationProvider>

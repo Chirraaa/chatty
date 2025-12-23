@@ -1,4 +1,4 @@
-// app/(tabs)/contacts.tsx - Clean contacts screen
+// app/(tabs)/contacts.tsx - Dark mode contacts
 import { useState } from 'react';
 import { StyleSheet, FlatList, View, TouchableOpacity, Image, TextInput, Dimensions } from 'react-native';
 import { router } from 'expo-router';
@@ -81,7 +81,7 @@ export default function ContactsScreen() {
                 <Text style={styles.email}>{item.email}</Text>
             </View>
 
-            <Ionicons name="chevron-forward" size={20} color="#AAB8C2" />
+            <Ionicons name="chevron-forward" size={20} color="#666" />
         </TouchableOpacity>
     );
 
@@ -91,7 +91,7 @@ export default function ContactsScreen() {
         if (!hasSearched) {
             return (
                 <View style={styles.emptyState}>
-                    <Ionicons name="search" size={80} color="#E1E8ED" />
+                    <Ionicons name="search" size={80} color="#333" />
                     <Text style={styles.emptyTitle}>Find people to chat with</Text>
                     <Text style={styles.emptySubtitle}>
                         Search by username to start a conversation
@@ -102,7 +102,7 @@ export default function ContactsScreen() {
 
         return (
             <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={80} color="#E1E8ED" />
+                <Ionicons name="people-outline" size={80} color="#333" />
                 <Text style={styles.emptyTitle}>No users found</Text>
                 <Text style={styles.emptySubtitle}>
                     Try searching for a different username
@@ -122,11 +122,11 @@ export default function ContactsScreen() {
 
             <View style={styles.searchContainer}>
                 <View style={styles.searchBar}>
-                    <Ionicons name="search" size={20} color="#657786" style={styles.searchIcon} />
+                    <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="Search by username..."
-                        placeholderTextColor="#AAB8C2"
+                        placeholderTextColor="#666"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         onSubmitEditing={handleSearch}
@@ -158,7 +158,7 @@ export default function ContactsScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F7F9FA',
+        backgroundColor: '#1A1A1A',
     },
     header: {
         paddingTop: 50,
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#2C2C2E',
         borderRadius: 24,
         paddingHorizontal: 16,
         paddingVertical: 12,
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         fontSize: 16,
-        color: '#14171A',
+        color: '#FFFFFF',
     },
     listContent: {
         paddingTop: 8,
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 12,
         paddingHorizontal: 20,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#2C2C2E',
         marginBottom: 1,
     },
     avatar: {
@@ -225,12 +225,12 @@ const styles = StyleSheet.create({
     username: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#14171A',
+        color: '#FFFFFF',
         marginBottom: 2,
     },
     email: {
         fontSize: 14,
-        color: '#657786',
+        color: '#8E8E93',
     },
     emptyState: {
         flex: 1,
@@ -241,13 +241,13 @@ const styles = StyleSheet.create({
     emptyTitle: {
         fontSize: 20,
         fontWeight: '600',
-        color: '#14171A',
+        color: '#FFFFFF',
         marginTop: 16,
         marginBottom: 8,
     },
     emptySubtitle: {
         fontSize: 14,
-        color: '#657786',
+        color: '#8E8E93',
         textAlign: 'center',
         lineHeight: 20,
     },

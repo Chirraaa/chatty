@@ -1,4 +1,4 @@
-// app/(tabs)/profile.tsx - Clean profile with picture upload
+// app/(tabs)/profile.tsx - Dark mode profile
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, ScrollView, View, Alert, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
@@ -201,7 +201,7 @@ export default function ProfileScreen() {
         {/* Troubleshooting */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="construct" size={20} color="#657786" />
+            <Ionicons name="construct" size={20} color="#8E8E93" />
             <Text style={styles.cardTitle}>Troubleshooting</Text>
           </View>
           <Text style={styles.cardDescription}>
@@ -236,7 +236,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F9FA',
+    backgroundColor: '#1A1A1A',
   },
   header: {
     paddingTop: 50,
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   profilePictureSection: {
     alignItems: 'center',
     marginBottom: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2C2C2E',
     borderRadius: 20,
     padding: 24,
   },
@@ -296,17 +296,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: '#2C2C2E',
   },
   username: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#14171A',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   email: {
     fontSize: 14,
-    color: '#657786',
+    color: '#8E8E93',
   },
   removePictureButton: {
     marginTop: 12,
@@ -315,10 +315,10 @@ const styles = StyleSheet.create({
   },
   removePictureText: {
     fontSize: 14,
-    color: '#E0245E',
+    color: '#FF453A',
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2C2C2E',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -331,12 +331,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#14171A',
+    color: '#FFFFFF',
     marginLeft: 8,
   },
   cardDescription: {
     fontSize: 14,
-    color: '#657786',
+    color: '#8E8E93',
     lineHeight: 20,
   },
   resetButton: {

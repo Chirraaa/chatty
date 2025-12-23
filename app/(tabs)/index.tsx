@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Clean chats list
+// app/(tabs)/index.tsx - Dark mode chats list
 import { useState, useEffect } from 'react';
 import { StyleSheet, View, FlatList, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
@@ -144,13 +144,13 @@ export default function ChatsListScreen() {
         )}
       </View>
 
-      <Ionicons name="chevron-forward" size={20} color="#AAB8C2" />
+      <Ionicons name="chevron-forward" size={20} color="#666" />
     </TouchableOpacity>
   );
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="chatbubbles-outline" size={80} color="#E1E8ED" />
+      <Ionicons name="chatbubbles-outline" size={80} color="#333" />
       <Text style={styles.emptyTitle}>No conversations yet</Text>
       <Text style={styles.emptySubtitle}>
         Find someone in Contacts to start chatting
@@ -201,7 +201,7 @@ export default function ChatsListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F9FA',
+    backgroundColor: '#1A1A1A',
   },
   header: {
     paddingTop: 50,
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2C2C2E',
     marginBottom: 1,
   },
   avatar: {
@@ -254,12 +254,12 @@ const styles = StyleSheet.create({
   chatName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#14171A',
+    color: '#FFFFFF',
     marginBottom: 2,
   },
   chatUsername: {
     fontSize: 14,
-    color: '#657786',
+    color: '#8E8E93',
   },
   emptyState: {
     flex: 1,
@@ -270,13 +270,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#14171A',
+    color: '#FFFFFF',
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: '#657786',
+    color: '#8E8E93',
     textAlign: 'center',
     lineHeight: 20,
   },
