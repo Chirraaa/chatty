@@ -1,4 +1,4 @@
-// app/chat/[userId].tsx - Minimalistic chat screen with safe area
+// app/chat/[userId].tsx - Fixed call handling with better error logging
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -26,6 +26,7 @@ export default function ChatScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [customNickname, setCustomNickname] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#000000');
+  const [isInitiatingCall, setIsInitiatingCall] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -69,22 +70,66 @@ export default function ChatScreen() {
   };
 
   const handleVoiceCall = async () => {
+    if (isInitiatingCall) {
+      console.log('⏳ Call already in progress...');
+      return;
+    }
+
     try {
+      setIsInitiatingCall(true);
+      console.log('📞 Starting voice call to:', userId);
+      
       const callId = await callService.createCall(userId, false);
+      console.log('✅ Call created with ID:', callId);
+      
+      console.log('🚀 Navigating to call screen...');
       router.push(`/call/${callId}`);
-    } catch (error) {
-      console.error('Error starting voice call:', error);
-      Alert.alert('Call Failed', 'Unable to start voice call');
+    } catch (error: any) {
+      console.error('❌ Error starting voice call:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+      });
+      
+      Alert.alert(
+        'Call Failed',
+        error.message || 'Unable to start voice call. Please check permissions and try again.'
+      );
+    } finally {
+      setIsInitiatingCall(false);
     }
   };
 
   const handleVideoCall = async () => {
+    if (isInitiatingCall) {
+      console.log('⏳ Call already in progress...');
+      return;
+    }
+
     try {
+      setIsInitiatingCall(true);
+      console.log('📹 Starting video call to:', userId);
+      
       const callId = await callService.createCall(userId, true);
+      console.log('✅ Call created with ID:', callId);
+      
+      console.log('🚀 Navigating to call screen...');
       router.push(`/call/${callId}`);
-    } catch (error) {
-      console.error('Error starting video call:', error);
-      Alert.alert('Call Failed', 'Unable to start video call');
+    } catch (error: any) {
+      console.error('❌ Error starting video call:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+      });
+      
+      Alert.alert(
+        'Call Failed',
+        error.message || 'Unable to start video call. Please check permissions and try again.'
+      );
+    } finally {
+      setIsInitiatingCall(false);
     }
   };
 
@@ -131,11 +176,27 @@ export default function ChatScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={handleVideoCall} style={styles.headerButton}>
-              <Ionicons name="videocam" size={24} color="#FFFFFF" />
+            <TouchableOpacity 
+              onPress={handleVideoCall} 
+              style={styles.headerButton}
+              disabled={isInitiatingCall}
+            >
+              <Ionicons 
+                name="videocam" 
+                size={24} 
+                color={isInitiatingCall ? "#666" : "#FFFFFF"} 
+              />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleVoiceCall} style={styles.headerButton}>
-              <Ionicons name="call" size={24} color="#FFFFFF" />
+            <TouchableOpacity 
+              onPress={handleVoiceCall} 
+              style={styles.headerButton}
+              disabled={isInitiatingCall}
+            >
+              <Ionicons 
+                name="call" 
+                size={24} 
+                color={isInitiatingCall ? "#666" : "#FFFFFF"} 
+              />
             </TouchableOpacity>
           </View>
         </View>

@@ -1,63 +1,79 @@
-// app/(tabs)/_layout.tsx - Fixed safe area insets
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// app/_layout.tsx - Fixed infinite loop issue
+import '../polyfills';
+import { useEffect, useState } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as eva from '@eva-design/eva';
+import { ApplicationProvider, IconRegistry } from '@ui-kitten/components';
+import { EvaIconsPack } from '@ui-kitten/eva-icons';
+import { auth } from '@/config/firebase';
+import authService from '@/services/auth.service';
+import { IncomingCallListener } from '@/components/incoming-call';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
-export default function TabLayout() {
-  const insets = useSafeAreaInsets();
+export default function RootLayout() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    const unsubscribe = auth().onAuthStateChanged(async (user: FirebaseAuthTypes.User | null) => {
+      console.log('🔐 Auth state changed:', user ? 'Authenticated' : 'Not authenticated');
+      
+      if (user) {
+        try {
+          await authService.initializeEncryptionOnStartup(user.uid);
+          setIsAuthenticated(true);
+        } catch (error) {
+          console.error('❌ Encryption initialization failed:', error);
+          setIsAuthenticated(false);
+        }
+      } else {
+        setIsAuthenticated(false);
+      }
+      
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Handle navigation based on auth state
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // Not authenticated and not in auth screens - redirect to login
+      router.replace('/(auth)/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Authenticated but still on auth screens - redirect to tabs
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, segments, isLoading]);
+
+  if (isLoading) {
+    return null;
+  }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: '#667eea',
-        tabBarInactiveTintColor: '#666',
-        tabBarStyle: {
-          backgroundColor: '#1C1C1E',
-          borderTopColor: '#2C2C2E',
-          borderTopWidth: 1,
-          height: 60 + insets.bottom, // Add safe area bottom
-          paddingBottom: insets.bottom, // Add safe area bottom
-          paddingTop: 8,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          marginBottom: Platform.OS === 'ios' ? 0 : 8,
-        },
-        tabBarIconStyle: {
-          marginTop: 4,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Chats',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="contacts"
-        options={{
-          title: 'Contacts',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+    <>
+      <IconRegistry icons={EvaIconsPack} />
+      <ApplicationProvider {...eva} theme={eva.dark}>
+        <SafeAreaProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="chat/[userId]" options={{ headerShown: false }} />
+            <Stack.Screen name="call/[callId]" options={{ headerShown: false }} />
+            <Stack.Screen name="contact-profile/[userId]" options={{ headerShown: false }} />
+            <Stack.Screen name="image-viewer/[messageId]" options={{ headerShown: false }} />
+          </Stack>
+          {isAuthenticated && <IncomingCallListener />}
+        </SafeAreaProvider>
+      </ApplicationProvider>
+    </>
   );
 }

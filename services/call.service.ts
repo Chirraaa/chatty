@@ -1,4 +1,4 @@
-// services/call.service.ts
+// services/call.service.ts - With better error handling and logging
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -36,6 +36,8 @@ class CallService {
    */
   async initializeCall(isVideo: boolean): Promise<MediaStream> {
     try {
+      console.log('🎥 Requesting media permissions:', isVideo ? 'video + audio' : 'audio only');
+      
       this.localStream = await mediaDevices.getUserMedia({
         audio: true,
         video: isVideo
@@ -48,10 +50,18 @@ class CallService {
           : false,
       });
 
+      console.log('✅ Media stream obtained successfully');
+      console.log('  - Audio tracks:', this.localStream.getAudioTracks().length);
+      if (isVideo) {
+        console.log('  - Video tracks:', this.localStream.getVideoTracks().length);
+      }
+
       return this.localStream;
-    } catch (error) {
-      console.error('Error getting user media:', error);
-      throw new Error('Failed to access camera/microphone');
+    } catch (error: any) {
+      console.error('❌ Error getting user media:', error);
+      console.error('  - Error name:', error.name);
+      console.error('  - Error message:', error.message);
+      throw new Error(`Failed to access ${isVideo ? 'camera/microphone' : 'microphone'}. Please check permissions.`);
     }
   }
 
@@ -60,13 +70,22 @@ class CallService {
    */
   async createCall(receiverId: string, isVideo: boolean): Promise<string> {
     try {
+      console.log('📞 Creating call...');
       const currentUser = auth().currentUser;
-      if (!currentUser) throw new Error('Not authenticated');
+      if (!currentUser) {
+        throw new Error('Not authenticated');
+      }
+
+      console.log('  - Caller:', currentUser.uid);
+      console.log('  - Receiver:', receiverId);
+      console.log('  - Type:', isVideo ? 'video' : 'audio');
 
       // Get local stream
+      console.log('1️⃣ Initializing media...');
       await this.initializeCall(isVideo);
 
       // Create call document
+      console.log('2️⃣ Creating Firestore call document...');
       const callRef = await firestore().collection('calls').add({
         callerId: currentUser.uid,
         receiverId,
@@ -76,59 +95,83 @@ class CallService {
       });
 
       const callId = callRef.id;
+      console.log('✅ Call document created:', callId);
 
       // Create peer connection
+      console.log('3️⃣ Creating peer connection...');
       this.peerConnection = new RTCPeerConnection(this.configuration);
+      console.log('✅ Peer connection created');
 
       // Add local stream to peer connection
+      console.log('4️⃣ Adding local stream to peer connection...');
       if (this.localStream) {
         this.localStream.getTracks().forEach((track) => {
+          console.log('  - Adding track:', track.kind);
           this.peerConnection!.addTrack(track, this.localStream!);
         });
       }
 
       // Handle remote stream
       (this.peerConnection as any).ontrack = (event: any) => {
+        console.log('📥 Received remote track:', event.track.kind);
         if (event.streams && event.streams[0]) {
           this.remoteStream = event.streams[0];
+          console.log('✅ Remote stream set');
         }
       };
 
       // Handle ICE candidates
       (this.peerConnection as any).onicecandidate = async (event: any) => {
         if (event.candidate) {
-          await firestore()
-            .collection('calls')
-            .doc(callId)
-            .collection('callerCandidates')
-            .add(event.candidate.toJSON());
+          console.log('🧊 ICE candidate generated');
+          try {
+            await firestore()
+              .collection('calls')
+              .doc(callId)
+              .collection('callerCandidates')
+              .add(event.candidate.toJSON());
+            console.log('✅ ICE candidate saved');
+          } catch (error) {
+            console.error('❌ Failed to save ICE candidate:', error);
+          }
         }
       };
 
       // Create and set offer
+      console.log('5️⃣ Creating offer...');
       const offer = await this.peerConnection.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: isVideo,
       });
+      console.log('✅ Offer created');
+
+      console.log('6️⃣ Setting local description...');
       await this.peerConnection.setLocalDescription(offer);
+      console.log('✅ Local description set');
 
       // Save offer to Firestore
+      console.log('7️⃣ Saving offer to Firestore...');
       await callRef.update({
         offer: {
           type: offer.type,
           sdp: offer.sdp,
         },
       });
+      console.log('✅ Offer saved to Firestore');
 
       // Listen for answer
+      console.log('8️⃣ Setting up listeners...');
       this.listenForAnswer(callId);
-
-      // Listen for remote ICE candidates
       this.listenForRemoteCandidates(callId, 'answererCandidates');
+      console.log('✅ Listeners set up');
 
+      console.log('🎉 Call creation complete! Call ID:', callId);
       return callId;
-    } catch (error) {
-      console.error('Error creating call:', error);
+    } catch (error: any) {
+      console.error('❌ Error creating call:', error);
+      console.error('  - Error name:', error.name);
+      console.error('  - Error message:', error.message);
+      console.error('  - Error stack:', error.stack);
       this.endCall();
       throw error;
     }
@@ -139,6 +182,7 @@ class CallService {
    */
   async answerCall(callId: string): Promise<void> {
     try {
+      console.log('📞 Answering call:', callId);
       const callDoc = await firestore().collection('calls').doc(callId).get();
       const callData = callDoc.data();
 
@@ -194,6 +238,7 @@ class CallService {
 
       // Listen for remote ICE candidates
       this.listenForRemoteCandidates(callId, 'callerCandidates');
+      console.log('✅ Call answered successfully');
     } catch (error) {
       console.error('Error answering call:', error);
       this.endCall();
@@ -217,8 +262,10 @@ class CallService {
           (this.peerConnection as any).remoteDescription;
 
         if (data.answer && !hasRemoteDesc) {
+          console.log('📥 Received answer from receiver');
           const answer = new RTCSessionDescription(data.answer);
           await this.peerConnection?.setRemoteDescription(answer);
+          console.log('✅ Remote description set');
         }
       });
   }
@@ -235,6 +282,7 @@ class CallService {
         snapshot.docChanges().forEach(async (change) => {
           if (change.type === 'added') {
             const data = change.doc.data();
+            console.log('🧊 Received remote ICE candidate');
             const candidate = new RTCIceCandidate(data);
             await this.peerConnection?.addIceCandidate(candidate);
           }
@@ -247,12 +295,18 @@ class CallService {
    */
   async endCall(callId?: string) {
     try {
+      console.log('🔴 Ending call...');
+      
       // Stop all tracks
-      this.localStream?.getTracks().forEach((track) => track.stop());
+      this.localStream?.getTracks().forEach((track) => {
+        track.stop();
+        console.log('  - Stopped track:', track.kind);
+      });
       this.remoteStream?.getTracks().forEach((track) => track.stop());
 
       // Close peer connection
       this.peerConnection?.close();
+      console.log('  - Peer connection closed');
 
       // Update call status in Firestore
       if (callId) {
@@ -260,12 +314,15 @@ class CallService {
           status: 'ended',
           endedAt: firestore.FieldValue.serverTimestamp(),
         });
+        console.log('  - Call status updated in Firestore');
       }
 
       // Reset state
       this.localStream = null;
       this.remoteStream = null;
       this.peerConnection = null;
+      
+      console.log('✅ Call ended successfully');
     } catch (error) {
       console.error('Error ending call:', error);
     }
@@ -280,6 +337,7 @@ class CallService {
     const audioTrack = this.localStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
+      console.log('🎤 Microphone:', audioTrack.enabled ? 'ON' : 'OFF');
       return audioTrack.enabled;
     }
     return false;
@@ -294,6 +352,7 @@ class CallService {
     const videoTrack = this.localStream.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
+      console.log('📹 Camera:', videoTrack.enabled ? 'ON' : 'OFF');
       return videoTrack.enabled;
     }
     return false;
@@ -307,8 +366,10 @@ class CallService {
 
     const videoTrack = this.localStream.getVideoTracks()[0];
     if (videoTrack) {
+      console.log('🔄 Switching camera...');
       // @ts-ignore - _switchCamera is available in react-native-webrtc
       await videoTrack._switchCamera();
+      console.log('✅ Camera switched');
     }
   }
 
