@@ -1,4 +1,4 @@
-// app/(auth)/login.tsx
+// app/(auth)/login.tsx - Simplified
 import { useState } from 'react';
 import { StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { Link } from 'expo-router';
@@ -19,17 +19,12 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       await authService.signIn(email.trim(), password);
-      
       // Success! Navigation will be handled automatically by _layout.tsx
     } catch (error: any) {
       console.error('Login error:', error);
       
       let message = 'Failed to sign in. Please try again.';
-      
-      // Check for encryption-related errors
-      if (error.message && error.message.includes('encryption')) {
-        message = 'Failed to restore encryption keys. Your password may be incorrect, or your keys may need to be reset.';
-      } else if (error.code === 'auth/user-not-found') {
+      if (error.code === 'auth/user-not-found') {
         message = 'No account found with this email.';
       } else if (error.code === 'auth/wrong-password') {
         message = 'Incorrect password.';
@@ -37,8 +32,6 @@ export default function LoginScreen() {
         message = 'Invalid email address.';
       } else if (error.code === 'auth/invalid-credential') {
         message = 'Invalid email or password.';
-      } else if (error.code === 'firestore/permission-denied') {
-        message = 'Unable to access your data. Please try again.';
       }
       
       Alert.alert('Login Failed', message);

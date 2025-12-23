@@ -1,4 +1,4 @@
-// app/_layout.tsx
+// app/_layout.tsx - Simplified (no encryption)
 // CRITICAL: Polyfills MUST be imported first
 import '../polyfills';
 
@@ -10,7 +10,6 @@ import * as eva from '@eva-design/eva';
 import { ApplicationProvider, Layout, Text } from '@ui-kitten/components';
 
 import { auth } from '@/config/firebase';
-import authService from '@/services/auth.service';
 import { IncomingCallListener } from '@/components/incoming-call';
 
 export const unstable_settings = {
@@ -24,36 +23,18 @@ export default function RootLayout() {
   useEffect(() => {
     console.log('🔍 Setting up auth listener...');
     
-    const unsubscribe = auth().onAuthStateChanged(async (user: any) => {
+    const unsubscribe = auth().onAuthStateChanged((user: any) => {
       console.log('🔍 Auth state changed:', user ? `User: ${user.uid}` : 'No user');
       
-      try {
-        if (user) {
-          console.log('🔐 Initializing encryption from local storage...');
-          // Try to initialize from local storage only
-          const hasKeys = await authService.initializeEncryptionOnStartup(user.uid);
-          
-          if (hasKeys) {
-            // Keys found in local storage, proceed to app
-            console.log('✅ Encryption ready - going to app');
-            setInitialRoute('/(tabs)');
-          } else {
-            // No keys in local storage
-            // Don't sign out here - let the sign-in flow complete if active
-            // Just redirect to login so user can restore from cloud
-            console.warn('⚠️ No local encryption keys - redirecting to login');
-            setInitialRoute('/(auth)/login');
-          }
-        } else {
-          console.log('👤 No user, going to login');
-          setInitialRoute('/(auth)/login');
-        }
-      } catch (error) {
-        console.error('❌ Error in auth handler:', error);
+      if (user) {
+        console.log('✅ User authenticated - going to app');
+        setInitialRoute('/(tabs)');
+      } else {
+        console.log('👤 No user - going to login');
         setInitialRoute('/(auth)/login');
-      } finally {
-        setIsReady(true);
       }
+      
+      setIsReady(true);
     });
 
     return () => {

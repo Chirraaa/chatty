@@ -1,4 +1,4 @@
-// app/(auth)/signup.tsx
+// app/(auth)/signup.tsx - Simplified
 import { useState } from 'react';
 import { StyleSheet, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
 import { Link, router } from 'expo-router';
@@ -39,7 +39,7 @@ export default function SignupScreen() {
       
       Alert.alert(
         'Success!',
-        'Your account has been created with end-to-end encryption.',
+        'Your account has been created.',
         [
           {
             text: 'OK',
@@ -75,7 +75,7 @@ export default function SignupScreen() {
           {/* Header */}
           <Layout style={styles.header}>
             <Text category='h1' style={styles.title}>Create Account</Text>
-            <Text category='s1' appearance='hint'>Join with end-to-end encryption</Text>
+            <Text category='s1' appearance='hint'>Join and start chatting securely</Text>
           </Layout>
 
           {/* Form */}
