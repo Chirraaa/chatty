@@ -1,4 +1,4 @@
-// app/(tabs)/profile.tsx - Simplified (no encryption reset)
+// app/(tabs)/profile.tsx - With clear messages option
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, ScrollView, View, Alert } from 'react-native';
 import { router } from 'expo-router';
@@ -6,10 +6,12 @@ import { Layout, Text, Button, Card, Divider, Spinner } from '@ui-kitten/compone
 import { Ionicons } from '@expo/vector-icons';
 import authService from '@/services/auth.service';
 import { auth } from '@/config/firebase';
+import { clearAllMyMessagesAndResetKeys } from '@/utils/clear-messages';
 
 export default function ProfileScreen() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
   const currentUser = auth().currentUser;
 
   useEffect(() => {
@@ -35,6 +37,39 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClearMessages = () => {
+    Alert.alert(
+      'Clear Messages & Reset Keys',
+      'This will:\n• Delete all your messages\n• Generate new encryption keys\n• Update your public key in Firebase\n\nOther users will be able to send you new encrypted messages after this.\n\nAre you sure?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Clear & Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setClearing(true);
+              const deletedCount = await clearAllMyMessagesAndResetKeys();
+              Alert.alert(
+                'Success',
+                `Deleted ${deletedCount} messages and generated new encryption keys. You can now send and receive encrypted messages.`,
+                [{ text: 'OK' }]
+              );
+            } catch (error) {
+              console.error('Error clearing messages:', error);
+              Alert.alert('Error', 'Failed to clear messages and reset keys');
+            } finally {
+              setClearing(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSignOut = () => {
@@ -124,7 +159,7 @@ export default function ProfileScreen() {
             <Ionicons name="shield-checkmark-outline" size={24} color="#00D68F" />
             <View style={styles.infoContent}>
               <Text category='s2'>Security</Text>
-              <Text style={styles.securityText}>Messages secured in transit</Text>
+              <Text style={styles.securityText}>End-to-end encrypted</Text>
             </View>
           </View>
         </Card>
@@ -133,9 +168,35 @@ export default function ProfileScreen() {
         <Card style={styles.card}>
           <Text category='h6' style={styles.cardTitle}>About</Text>
           <Text appearance='hint' style={styles.aboutText}>
-            This app uses secure communication protocols. Your messages are 
-            protected with industry-standard security measures.
+            This app uses end-to-end encryption. Your messages are encrypted on 
+            your device and can only be decrypted by the recipient. Even we 
+            cannot read your messages.
           </Text>
+          
+          <Text appearance='hint' style={[styles.aboutText, styles.aboutTextSpaced]}>
+            Video and voice calls are also end-to-end encrypted using WebRTC.
+          </Text>
+        </Card>
+
+        {/* Troubleshooting Card */}
+        <Card style={styles.card}>
+          <Text category='h6' style={styles.cardTitle}>Troubleshooting</Text>
+          
+          <Text appearance='hint' style={styles.troubleshootText}>
+            If you see "🔒 Cannot decrypt this message" errors, it means those 
+            messages were encrypted with old keys. Clear messages and reset your 
+            encryption keys to start fresh.
+          </Text>
+          
+          <Button
+            style={styles.clearButton}
+            status='warning'
+            appearance='outline'
+            onPress={handleClearMessages}
+            disabled={clearing}
+          >
+            {clearing ? 'Clearing...' : 'Clear Messages & Reset Keys'}
+          </Button>
         </Card>
 
         {/* Sign Out Button */}
@@ -213,6 +274,16 @@ const styles = StyleSheet.create({
   },
   aboutText: {
     lineHeight: 20,
+  },
+  aboutTextSpaced: {
+    marginTop: 12,
+  },
+  troubleshootText: {
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  clearButton: {
+    marginTop: 8,
   },
   signOutButton: {
     marginTop: 16,

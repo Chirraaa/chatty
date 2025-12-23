@@ -1,6 +1,7 @@
-// services/auth.service.ts - Simplified (no encryption complexity)
+// services/auth.service.ts - With E2EE initialization
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import encryptionService from './encryption.service';
 
 class AuthService {
     /**
@@ -15,12 +16,17 @@ class AuthService {
             const user = userCredential.user;
             console.log('✅ Firebase auth user created:', user.uid);
 
-            // Create user profile in Firestore
+            // Initialize encryption (generates keys)
+            console.log('🔐 Initializing encryption...');
+            await encryptionService.initialize(user.uid);
+
+            // Create user profile in Firestore with public key
             console.log('💾 Creating user profile in Firestore...');
             await firestore().collection('users').doc(user.uid).set({
                 uid: user.uid,
                 email,
                 username,
+                publicKey: encryptionService.getPublicKey(),
                 createdAt: firestore.FieldValue.serverTimestamp(),
                 searchableUsername: username.toLowerCase(),
             });
@@ -40,6 +46,11 @@ class AuthService {
         try {
             console.log('🔐 Signing in...');
             const userCredential = await auth().signInWithEmailAndPassword(email, password);
+            
+            // Initialize encryption
+            console.log('🔐 Initializing encryption...');
+            await encryptionService.initialize(userCredential.user.uid);
+            
             console.log('✅ Sign in successful');
             return userCredential.user;
         } catch (error) {
@@ -177,6 +188,18 @@ class AuthService {
         } catch (error) {
             console.error('❌ Get custom nickname error:', error);
             return null;
+        }
+    }
+
+    /**
+     * Initialize encryption on app startup
+     */
+    async initializeEncryptionOnStartup(userId: string): Promise<void> {
+        try {
+            await encryptionService.initialize(userId);
+        } catch (error) {
+            console.error('❌ Failed to initialize encryption:', error);
+            throw error;
         }
     }
 }

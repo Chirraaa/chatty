@@ -1,4 +1,4 @@
-// app/_layout.tsx - Simplified (no encryption)
+// app/_layout.tsx - With E2EE initialization
 // CRITICAL: Polyfills MUST be imported first
 import '../polyfills';
 
@@ -10,6 +10,7 @@ import * as eva from '@eva-design/eva';
 import { ApplicationProvider, Layout, Text } from '@ui-kitten/components';
 
 import { auth } from '@/config/firebase';
+import authService from '@/services/auth.service';
 import { IncomingCallListener } from '@/components/incoming-call';
 
 export const unstable_settings = {
@@ -23,12 +24,20 @@ export default function RootLayout() {
   useEffect(() => {
     console.log('🔍 Setting up auth listener...');
     
-    const unsubscribe = auth().onAuthStateChanged((user: any) => {
+    const unsubscribe = auth().onAuthStateChanged(async (user: any) => {
       console.log('🔍 Auth state changed:', user ? `User: ${user.uid}` : 'No user');
       
       if (user) {
-        console.log('✅ User authenticated - going to app');
-        setInitialRoute('/(tabs)');
+        try {
+          // Initialize encryption
+          console.log('🔐 Initializing encryption...');
+          await authService.initializeEncryptionOnStartup(user.uid);
+          console.log('✅ User authenticated and encryption ready');
+          setInitialRoute('/(tabs)');
+        } catch (error) {
+          console.error('❌ Failed to initialize encryption:', error);
+          setInitialRoute('/(tabs)'); // Still proceed, encryption will retry
+        }
       } else {
         console.log('👤 No user - going to login');
         setInitialRoute('/(auth)/login');

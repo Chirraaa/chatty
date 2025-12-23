@@ -1,4 +1,4 @@
-// components/message-bubble.tsx - Simplified (no decryption)
+// components/message-bubble.tsx - With E2EE error handling
 import { StyleSheet, View, Image } from 'react-native';
 import { Text, Card } from '@ui-kitten/components';
 import { auth } from '@/config/firebase';
@@ -33,26 +33,56 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           style={[
             styles.bubble,
             isSentByMe ? styles.sentBubble : styles.receivedBubble,
+            message.decryptionError && styles.errorBubble,
           ]}
         >
           <Text
             style={[
               styles.messageText,
               isSentByMe ? styles.sentText : styles.receivedText,
+              message.decryptionError && styles.errorText,
             ]}
           >
             {message.content}
           </Text>
+          {message.encrypted && !message.decryptionError && (
+            <Text category='c2' style={styles.encryptedBadge}>
+              🔒 Encrypted
+            </Text>
+          )}
+          {message.decryptionError && (
+            <Text category='c2' style={styles.errorHint}>
+              Device keys changed. New messages will work.
+            </Text>
+          )}
         </Card>
       )}
 
-      {message.type === 'image' && message.imageData && (
+      {message.type === 'image' && message.imageData && !message.decryptionError && (
         <Card style={styles.imageBubble}>
           <Image
             source={{ uri: message.imageData }}
             style={styles.image}
             resizeMode="cover"
           />
+          {message.encrypted && (
+            <View style={styles.imageEncryptedBadge}>
+              <Text category='c2' style={styles.encryptedBadgeText}>
+                🔒 Encrypted
+              </Text>
+            </View>
+          )}
+        </Card>
+      )}
+
+      {message.type === 'image' && message.decryptionError && (
+        <Card style={[styles.bubble, styles.errorBubble]}>
+          <Text style={styles.errorText}>
+            🖼️ Encrypted image
+          </Text>
+          <Text category='c2' style={styles.errorHint}>
+            Device keys changed. New images will work.
+          </Text>
         </Card>
       )}
 
@@ -94,6 +124,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#EDF1F7',
     borderBottomLeftRadius: 4,
   },
+  errorBubble: {
+    backgroundColor: '#FFE5E5',
+    borderColor: '#FF3D71',
+    borderWidth: 1,
+  },
   messageText: {
     fontSize: 15,
     lineHeight: 20,
@@ -104,15 +139,43 @@ const styles = StyleSheet.create({
   receivedText: {
     color: '#222B45',
   },
+  errorText: {
+    color: '#FF3D71',
+  },
+  encryptedBadge: {
+    marginTop: 4,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 10,
+  },
+  errorHint: {
+    marginTop: 4,
+    color: '#8F9BB3',
+    fontSize: 10,
+    fontStyle: 'italic',
+  },
   imageBubble: {
     padding: 0,
     borderRadius: 16,
     overflow: 'hidden',
+    position: 'relative',
   },
   image: {
     width: 250,
     height: 250,
     borderRadius: 16,
+  },
+  imageEncryptedBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  encryptedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
   },
   timestamp: {
     marginTop: 4,
