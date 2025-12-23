@@ -66,11 +66,15 @@ export function IncomingCallListener() {
           }
         },
         (error: FirebaseError) => {
+          // Ignore permission denied errors - they're expected when user signs out
+          if (error.code === 'permission-denied') {
+            console.log('🔒 Incoming call listener closed (expected after sign out)');
+            return;
+          }
+          
           console.error('❌ Error in incoming call listener:', error);
           
-          if (error.code === 'permission-denied') {
-            console.error('💡 Permission denied: User may have signed out or lacks permissions');
-          } else if (error.code) {
+          if (error.code) {
             console.error(`💡 Firebase error code: ${error.code}`);
           }
         }

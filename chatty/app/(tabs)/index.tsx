@@ -31,10 +31,18 @@ export default function ChatsListScreen() {
       return;
     }
 
-    loadChats();
+    const unsubscribe = loadChats();
+    
+    // Cleanup function
+    return () => {
+      if (unsubscribe) {
+        console.log('🧹 Cleaning up chats listener');
+        unsubscribe();
+      }
+    };
   }, []);
 
-  const loadChats = async () => {
+  const loadChats = () => {
     try {
       const currentUser = auth().currentUser;
       if (!currentUser) {
@@ -94,6 +102,12 @@ export default function ChatsListScreen() {
             setLoading(false);
           }
         }, (error) => {
+          // Ignore permission denied errors - they're expected when user signs out
+          if (error.cause === 'permission-denied') {
+            console.log('🔒 Chats listener closed (expected after sign out)');
+            return;
+          }
+          
           console.error('Error in messages listener:', error);
           setLoading(false);
         });
