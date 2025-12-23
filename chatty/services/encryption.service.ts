@@ -2,6 +2,7 @@
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import firestore from '@react-native-firebase/firestore';
 
 class EncryptionService {
   private keyPair: nacl.BoxKeyPair | null = null;
@@ -17,25 +18,90 @@ class EncryptionService {
     return bytes;
   }
 
-  async initialize(userId: string) {
+  /**
+   * Derive a key from password using PBKDF2-like approach
+   * This key is used to encrypt the private key before storing in Firestore
+   */
+  private async deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<Uint8Array> {
+    // Simple key derivation: hash(password + salt) repeated 10000 times
+    let key = decodeUTF8(password + encodeBase64(salt));
+    
+    // Multiple rounds of hashing for key stretching
+    for (let i = 0; i < 10000; i++) {
+      key = nacl.hash(key).slice(0, 32); // Use first 32 bytes as the key
+    }
+    
+    return key;
+  }
+
+  /**
+   * Encrypt data with a symmetric key
+   */
+  private encryptWithKey(data: Uint8Array, key: Uint8Array): string {
+    const nonce = this.getRandomBytes(nacl.secretbox.nonceLength);
+    const encrypted = nacl.secretbox(data, nonce, key);
+    
+    // Combine nonce + encrypted data
+    const combined = new Uint8Array(nonce.length + encrypted.length);
+    combined.set(nonce);
+    combined.set(encrypted, nonce.length);
+    
+    return encodeBase64(combined);
+  }
+
+  /**
+   * Decrypt data with a symmetric key
+   */
+  private decryptWithKey(ciphertext: string, key: Uint8Array): Uint8Array | null {
+    const combined = decodeBase64(ciphertext);
+    const nonce = combined.slice(0, nacl.secretbox.nonceLength);
+    const encrypted = combined.slice(nacl.secretbox.nonceLength);
+    
+    return nacl.secretbox.open(encrypted, nonce, key);
+  }
+
+  /**
+   * Initialize encryption service - now with password for cloud backup
+   */
+  async initialize(userId: string, password?: string) {
     if (this.initialized && this.userId === userId) return;
     
     this.userId = userId;
     
     try {
-      // Try to load existing keys
-      const storedKeys = await this.loadKeys(userId);
+      // First, try to load from local storage
+      let storedKeys = await this.loadKeys(userId);
+      
+      // If not in local storage and password provided, try to load from cloud
+      if (!storedKeys && password) {
+        console.log('🔍 Checking for cloud backup...');
+        storedKeys = await this.loadKeysFromCloud(userId, password);
+        
+        if (storedKeys) {
+          // Save to local storage for faster access next time
+          await this.saveKeys(userId, storedKeys);
+          console.log('✅ Restored keys from cloud backup');
+        }
+      }
       
       if (storedKeys) {
         this.keyPair = storedKeys;
         console.log('✅ Loaded existing encryption keys');
       } else {
-        // Generate new keys directly using crypto
+        // Generate new keys
         console.log('🔑 Generating new encryption keys...');
         const secretKey = this.getRandomBytes(32);
         this.keyPair = nacl.box.keyPair.fromSecretKey(secretKey);
         
+        // Save locally
         await this.saveKeys(userId, this.keyPair);
+        
+        // If password provided, also backup to cloud
+        if (password) {
+          await this.backupKeysToCloud(userId, this.keyPair, password);
+          console.log('✅ Keys backed up to cloud');
+        }
+        
         console.log('✅ Generated and saved new encryption keys');
       }
       
@@ -70,16 +136,10 @@ class EncryptionService {
     this.ensureInitialized();
     
     try {
-      // Decode recipient's public key
       const theirPublicKey = decodeBase64(recipientPublicKey);
-      
-      // Generate nonce directly using crypto
       const nonce = this.getRandomBytes(nacl.box.nonceLength);
-      
-      // Encode message to bytes
       const messageBytes = decodeUTF8(plaintext);
       
-      // Encrypt the message
       const encrypted = nacl.box(
         messageBytes,
         nonce,
@@ -87,12 +147,10 @@ class EncryptionService {
         this.keyPair!.secretKey
       );
       
-      // Combine nonce + encrypted data
       const fullMessage = new Uint8Array(nonce.length + encrypted.length);
       fullMessage.set(nonce);
       fullMessage.set(encrypted, nonce.length);
       
-      // Return as base64
       return encodeBase64(fullMessage);
     } catch (error) {
       console.error('❌ Encryption failed:', error);
@@ -107,17 +165,11 @@ class EncryptionService {
     this.ensureInitialized();
     
     try {
-      // Decode sender's public key
       const theirPublicKey = decodeBase64(senderPublicKey);
-      
-      // Decode the ciphertext
       const fullMessage = decodeBase64(ciphertext);
-      
-      // Extract nonce and encrypted data
       const nonce = fullMessage.slice(0, nacl.box.nonceLength);
       const encrypted = fullMessage.slice(nacl.box.nonceLength);
       
-      // Decrypt the message
       const decrypted = nacl.box.open(
         encrypted,
         nonce,
@@ -129,7 +181,6 @@ class EncryptionService {
         throw new Error('Failed to decrypt message - invalid key or corrupted data');
       }
       
-      // Decode bytes to string
       return encodeUTF8(decrypted);
     } catch (error) {
       console.error('❌ Decryption failed:', error);
@@ -139,24 +190,20 @@ class EncryptionService {
 
   /**
    * Encrypt a message for yourself using symmetric encryption
-   * This allows you to read your own sent messages
    */
   async encryptForSelf(plaintext: string): Promise<string> {
     this.ensureInitialized();
     
     try {
-      // Use secret key directly for symmetric encryption
       const nonce = this.getRandomBytes(nacl.secretbox.nonceLength);
       const messageBytes = decodeUTF8(plaintext);
       
-      // Use secretbox (symmetric encryption) with our secret key
       const encrypted = nacl.secretbox(
         messageBytes,
         nonce,
         this.keyPair!.secretKey
       );
       
-      // Combine nonce + encrypted data
       const fullMessage = new Uint8Array(nonce.length + encrypted.length);
       fullMessage.set(nonce);
       fullMessage.set(encrypted, nonce.length);
@@ -176,12 +223,9 @@ class EncryptionService {
     
     try {
       const fullMessage = decodeBase64(ciphertext);
-      
-      // Extract nonce and encrypted data
       const nonce = fullMessage.slice(0, nacl.secretbox.nonceLength);
       const encrypted = fullMessage.slice(nacl.secretbox.nonceLength);
       
-      // Decrypt using secretbox
       const decrypted = nacl.secretbox.open(
         encrypted,
         nonce,
@@ -208,7 +252,74 @@ class EncryptionService {
   }
 
   /**
-   * Save keys to secure storage
+   * Backup keys to Firestore (encrypted with password)
+   */
+  private async backupKeysToCloud(userId: string, keyPair: nacl.BoxKeyPair, password: string): Promise<void> {
+    try {
+      // Generate a salt for key derivation
+      const salt = this.getRandomBytes(16);
+      
+      // Derive encryption key from password
+      const derivedKey = await this.deriveKeyFromPassword(password, salt);
+      
+      // Encrypt the secret key
+      const encryptedSecretKey = this.encryptWithKey(keyPair.secretKey, derivedKey);
+      
+      // Store in Firestore
+      await firestore()
+        .collection('users')
+        .doc(userId)
+        .update({
+          encryptedPrivateKey: encryptedSecretKey,
+          keySalt: encodeBase64(salt),
+          keyBackupVersion: 1, // For future compatibility
+        });
+      
+      console.log('💾 Private key backed up to cloud');
+    } catch (error) {
+      console.error('❌ Failed to backup keys to cloud:', error);
+      // Don't throw - backup failure shouldn't prevent login
+    }
+  }
+
+  /**
+   * Load keys from Firestore (decrypt with password)
+   */
+  private async loadKeysFromCloud(userId: string, password: string): Promise<nacl.BoxKeyPair | null> {
+    try {
+      const userDoc = await firestore().collection('users').doc(userId).get();
+      const data = userDoc.data();
+      
+      if (!data?.encryptedPrivateKey || !data?.keySalt) {
+        console.log('📭 No cloud backup found');
+        return null;
+      }
+      
+      // Derive decryption key from password
+      const salt = decodeBase64(data.keySalt);
+      const derivedKey = await this.deriveKeyFromPassword(password, salt);
+      
+      // Decrypt the secret key
+      const secretKey = this.decryptWithKey(data.encryptedPrivateKey, derivedKey);
+      
+      if (!secretKey) {
+        console.error('❌ Failed to decrypt cloud backup - wrong password?');
+        return null;
+      }
+      
+      // Reconstruct key pair
+      const keyPair = nacl.box.keyPair.fromSecretKey(secretKey);
+      
+      console.log('📬 Loaded keys from cloud backup');
+      return keyPair;
+    } catch (error) {
+      console.error('❌ Error loading keys from cloud:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Save keys to local storage
    */
   private async saveKeys(userId: string, keyPair: nacl.BoxKeyPair): Promise<void> {
     try {
@@ -222,7 +333,7 @@ class EncryptionService {
         JSON.stringify(keys)
       );
       
-      console.log('💾 Encryption keys saved to storage');
+      console.log('💾 Encryption keys saved to local storage');
     } catch (error) {
       console.error('❌ Failed to save encryption keys:', error);
       throw new Error('Failed to save encryption keys to storage');
@@ -230,20 +341,20 @@ class EncryptionService {
   }
 
   /**
-   * Load keys from secure storage
+   * Load keys from local storage
    */
   private async loadKeys(userId: string): Promise<nacl.BoxKeyPair | null> {
     try {
       const stored = await AsyncStorage.getItem(`encryption_keys_${userId}`);
       
       if (!stored) {
-        console.log('📭 No existing encryption keys found');
+        console.log('📭 No local encryption keys found');
         return null;
       }
       
       const keys = JSON.parse(stored);
       
-      console.log('📬 Found existing encryption keys');
+      console.log('📬 Found local encryption keys');
       return {
         publicKey: decodeBase64(keys.publicKey),
         secretKey: decodeBase64(keys.secretKey),

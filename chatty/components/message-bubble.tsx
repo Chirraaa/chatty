@@ -33,26 +33,44 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           style={[
             styles.bubble,
             isSentByMe ? styles.sentBubble : styles.receivedBubble,
+            message.decryptionError && styles.errorBubble,
           ]}
         >
           <Text
             style={[
               styles.messageText,
               isSentByMe ? styles.sentText : styles.receivedText,
+              message.decryptionError && styles.errorText,
             ]}
           >
             {message.decryptedContent}
           </Text>
+          {message.decryptionError && (
+            <Text category='c2' style={styles.errorHint}>
+              Old encryption keys • Go to Profile → Reset Keys
+            </Text>
+          )}
         </Card>
       )}
 
-      {message.type === 'image' && message.decryptedImageUri && (
+      {message.type === 'image' && message.decryptedImageUri && !message.decryptionError && (
         <Card style={styles.imageBubble}>
           <Image
             source={{ uri: message.decryptedImageUri }}
             style={styles.image}
             resizeMode="cover"
           />
+        </Card>
+      )}
+
+      {message.type === 'image' && message.decryptionError && (
+        <Card style={[styles.bubble, styles.errorBubble]}>
+          <Text style={styles.errorText}>
+            🖼️ Image encrypted with old keys
+          </Text>
+          <Text category='c2' style={styles.errorHint}>
+            Go to Profile → Reset Keys
+          </Text>
         </Card>
       )}
 
@@ -94,6 +112,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#EDF1F7',
     borderBottomLeftRadius: 4,
   },
+  errorBubble: {
+    backgroundColor: '#FFE5E5',
+    borderColor: '#FF3D71',
+    borderWidth: 1,
+  },
   messageText: {
     fontSize: 15,
     lineHeight: 20,
@@ -103,6 +126,15 @@ const styles = StyleSheet.create({
   },
   receivedText: {
     color: '#222B45',
+  },
+  errorText: {
+    color: '#FF3D71',
+  },
+  errorHint: {
+    marginTop: 4,
+    color: '#8F9BB3',
+    fontSize: 10,
+    fontStyle: 'italic',
   },
   imageBubble: {
     padding: 0,

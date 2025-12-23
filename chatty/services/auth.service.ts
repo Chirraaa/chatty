@@ -10,20 +10,20 @@ class AuthService {
     async signUp(email: string, password: string, username: string) {
         try {
             console.log('🔐 Starting signup process...');
-            
+
             // Create Firebase auth user
             const userCredential = await auth().createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
             console.log('✅ Firebase auth user created:', user.uid);
 
-            // Initialize encryption for this user
-            console.log('🔐 Initializing encryption...');
-            await encryptionService.initialize(user.uid);
+            // Initialize encryption for this user WITH password for cloud backup
+            console.log('🔐 Initializing encryption with cloud backup...');
+            await encryptionService.initialize(user.uid, password);
 
-            // Generate encryption keys
+            // Generate encryption keys (will be backed up to cloud automatically)
             console.log('🔑 Generating encryption keys...');
             const publicKeys = await encryptionService.generateKeys();
-            console.log('✅ Encryption keys generated');
+            console.log('✅ Encryption keys generated and backed up');
 
             // Create user profile in Firestore with public key
             console.log('💾 Creating user profile in Firestore...');
@@ -31,16 +31,16 @@ class AuthService {
                 uid: user.uid,
                 email,
                 username,
-                publicKey: publicKeys.publicKey, // Store public key for other users to encrypt messages
+                publicKey: publicKeys.publicKey,
                 createdAt: firestore.FieldValue.serverTimestamp(),
-                searchableUsername: username.toLowerCase(), // For search
+                searchableUsername: username.toLowerCase(),
             });
             console.log('✅ User profile created successfully');
 
             // Verify profile was created
             const profileDoc = await firestore().collection('users').doc(user.uid).get();
             if (profileDoc.exists) {
-                console.log('✅ Profile verification successful:', profileDoc.data());
+                console.log('✅ Profile verification successful');
             } else {
                 console.error('❌ Profile verification failed - document does not exist!');
                 throw new Error('Failed to create user profile');
@@ -61,9 +61,9 @@ class AuthService {
             console.log('🔐 Signing in...');
             const userCredential = await auth().signInWithEmailAndPassword(email, password);
 
-            // Initialize encryption service with user's keys
-            console.log('🔐 Initializing encryption...');
-            await encryptionService.initialize(userCredential.user.uid);
+            // Initialize encryption service with password to restore from cloud if needed
+            console.log('🔐 Initializing encryption with cloud restore capability...');
+            await encryptionService.initialize(userCredential.user.uid, password);
             console.log('✅ Sign in successful');
 
             return userCredential.user;
@@ -168,7 +168,6 @@ class AuthService {
             const currentUser = this.getCurrentUser();
             if (!currentUser) throw new Error('Not authenticated');
 
-            // Store in a separate collection for custom nicknames
             await firestore()
                 .collection('users')
                 .doc(currentUser.uid)
@@ -203,6 +202,19 @@ class AuthService {
         } catch (error) {
             console.error('❌ Get custom nickname error:', error);
             return null;
+        }
+    }
+
+    /**
+     * Re-initialize encryption after app restart
+     * This tries to load from local storage only (no password available)
+     */
+    async initializeEncryptionOnStartup(userId: string) {
+        try {
+            await encryptionService.initialize(userId);
+        } catch (error) {
+            console.warn('⚠️ Could not initialize encryption on startup:', error);
+            // This is OK - user will need to sign in again to restore from cloud
         }
     }
 }

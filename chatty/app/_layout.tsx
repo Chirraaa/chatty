@@ -10,7 +10,7 @@ import * as eva from '@eva-design/eva';
 import { ApplicationProvider, Layout, Text } from '@ui-kitten/components';
 
 import { auth } from '@/config/firebase';
-import encryptionService from '@/services/encryption.service';
+import authService from '@/services/auth.service';
 import { IncomingCallListener } from '@/components/incoming-call';
 
 export const unstable_settings = {
@@ -29,8 +29,10 @@ export default function RootLayout() {
       
       try {
         if (user) {
-          console.log('🔐 Initializing encryption...');
-          await encryptionService.initialize(user.uid);
+          console.log('🔐 Initializing encryption from local storage...');
+          // Try to initialize from local storage
+          // If keys don't exist locally, user will need to sign in again to restore from cloud
+          await authService.initializeEncryptionOnStartup(user.uid);
           console.log('✅ Encryption initialized');
           setInitialRoute('/(tabs)');
         } else {
