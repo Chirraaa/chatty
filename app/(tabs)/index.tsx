@@ -11,6 +11,16 @@ import authService from '@/services/auth.service';
 import messageService from '@/services/message.service';
 import notificationService from '@/services/notification.service';
 
+// Firebase error type interface - ADDED
+interface FirebaseError extends Error {
+  code?: string;
+}
+
+// Helper function to check if error is a Firebase error - ADDED
+function isFirebaseError(error: any): error is FirebaseError {
+  return error && typeof error.code === 'string';
+}
+
 interface ChatPreview {
   userId: string;
   username: string;
@@ -113,7 +123,7 @@ export default function ChatsListScreen() {
         setLoading(false);
       };
 
-      // Real-time listener for sent messages
+      // Real-time listener for sent messages - FIXED ERROR HANDLING
       const unsubscribe1 = firestore()
         .collection('messages')
         .where('senderId', '==', currentUser.uid)
@@ -133,14 +143,15 @@ export default function ChatsListScreen() {
             await processMessages(allMessages);
           },
           (error) => {
-            if (error.code !== 'permission-denied') {
+            // Use type guard for Firebase error - FIXED
+            if (isFirebaseError(error) && error.code !== 'permission-denied') {
               console.error('❌ Error in sent messages listener:', error);
             }
             setLoading(false);
           }
         );
 
-      // Real-time listener for received messages
+      // Real-time listener for received messages - FIXED ERROR HANDLING
       const unsubscribe2 = firestore()
         .collection('messages')
         .where('receiverId', '==', currentUser.uid)
@@ -160,7 +171,8 @@ export default function ChatsListScreen() {
             await processMessages(allMessages);
           },
           (error) => {
-            if (error.code !== 'permission-denied') {
+            // Use type guard for Firebase error - FIXED
+            if (isFirebaseError(error) && error.code !== 'permission-denied') {
               console.error('❌ Error in received messages listener:', error);
             }
             setLoading(false);

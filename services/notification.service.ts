@@ -6,12 +6,14 @@ import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Configure notification handler
+// Configure notification handler - FIXED
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -106,7 +108,7 @@ class NotificationService {
       // Update badge count
       const data = notification.request.content.data;
       if (data.type === 'message' && data.senderId) {
-        this.incrementUnreadCount(data.senderId);
+        this.incrementUnreadCount(data.senderId as string);
       }
     });
   }
