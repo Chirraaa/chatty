@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Clean minimalistic chats list
+// app/(tabs)/index.tsx - Real-time updates with unread counts
 import { useState, useEffect } from 'react';
 import { StyleSheet, View, FlatList, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
+import messageService from '@/services/message.service';
+import notificationService from '@/services/notification.service';
 
 interface ChatPreview {
   userId: string;
@@ -25,6 +27,9 @@ export default function ChatsListScreen() {
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
+    // Clear current chat when on chats list
+    notificationService.setCurrentChat(null);
+    
     const currentUser = auth().currentUser;
     
     if (!currentUser) {
@@ -49,60 +54,126 @@ export default function ChatsListScreen() {
         return;
       }
 
-      const unsubscribe = firestore()
-        .collection('messages')
-        .where('senderId', '==', currentUser.uid)
-        .onSnapshot(async (snapshot) => {
-          try {
-            const receiverSnapshot = await firestore()
-              .collection('messages')
-              .where('receiverId', '==', currentUser.uid)
-              .get();
+      console.log('📡 Setting up real-time chat list listener...');
 
-            const allDocs = [...snapshot.docs, ...receiverSnapshot.docs];
-            
-            const userIds = new Set<string>();
-            allDocs.forEach(doc => {
-              const data = doc.data();
-              if (data.senderId !== currentUser.uid) {
-                userIds.add(data.senderId);
-              }
-              if (data.receiverId !== currentUser.uid) {
-                userIds.add(data.receiverId);
-              }
-            });
+      // Create a map to track unique users and their messages
+      const usersMap = new Map<string, ChatPreview>();
 
-            const chatPreviews: ChatPreview[] = [];
-            for (const userId of userIds) {
-              const profile = await authService.getUserProfile(userId);
-              const customNickname = await authService.getCustomNickname(userId);
-              
-              if (profile) {
-                chatPreviews.push({
-                  userId,
-                  username: profile.username,
-                  customNickname: customNickname || undefined,
-                  profilePicture: profile.profilePicture,
-                  unreadCount: 0,
-                });
-              }
-            }
-
-            setChats(chatPreviews);
-            setLoading(false);
-          } catch (error) {
-            console.error('Error processing messages:', error);
-            setLoading(false);
+      const processMessages = async (messages: any[]) => {
+        const currentUserId = currentUser.uid;
+        
+        // Extract unique user IDs
+        const userIds = new Set<string>();
+        messages.forEach(msg => {
+          const data = msg.data();
+          if (data.senderId !== currentUserId) {
+            userIds.add(data.senderId);
           }
-        }, (error) => {
-          if (error.cause === 'permission-denied') {
-            return;
+          if (data.receiverId !== currentUserId) {
+            userIds.add(data.receiverId);
           }
-          console.error('Error in messages listener:', error);
-          setLoading(false);
         });
 
-      return unsubscribe;
+        // Load profiles and unread counts
+        const chatPreviews: ChatPreview[] = [];
+        for (const userId of userIds) {
+          const profile = await authService.getUserProfile(userId);
+          const customNickname = await authService.getCustomNickname(userId);
+          const unreadCount = await messageService.getUnreadCount(userId);
+          
+          if (profile) {
+            // Find last message with this user
+            const userMessages = messages.filter(msg => {
+              const data = msg.data();
+              return (data.senderId === userId || data.receiverId === userId);
+            });
+            
+            const lastMsg = userMessages[userMessages.length - 1];
+            const lastMsgData = lastMsg?.data();
+
+            chatPreviews.push({
+              userId,
+              username: profile.username,
+              customNickname: customNickname || undefined,
+              profilePicture: profile.profilePicture,
+              lastMessageTime: lastMsgData?.timestamp?.toDate(),
+              unreadCount,
+            });
+          }
+        }
+
+        // Sort by last message time
+        chatPreviews.sort((a, b) => {
+          const timeA = a.lastMessageTime?.getTime() || 0;
+          const timeB = b.lastMessageTime?.getTime() || 0;
+          return timeB - timeA;
+        });
+
+        setChats(chatPreviews);
+        setLoading(false);
+      };
+
+      // Real-time listener for sent messages
+      const unsubscribe1 = firestore()
+        .collection('messages')
+        .where('senderId', '==', currentUser.uid)
+        .orderBy('timestamp', 'desc')
+        .onSnapshot(
+          async (sentSnapshot) => {
+            console.log('📬 Sent messages updated');
+            
+            // Get received messages
+            const receivedSnapshot = await firestore()
+              .collection('messages')
+              .where('receiverId', '==', currentUser.uid)
+              .orderBy('timestamp', 'desc')
+              .get();
+
+            const allMessages = [...sentSnapshot.docs, ...receivedSnapshot.docs];
+            await processMessages(allMessages);
+          },
+          (error) => {
+            if (error.code !== 'permission-denied') {
+              console.error('❌ Error in sent messages listener:', error);
+            }
+            setLoading(false);
+          }
+        );
+
+      // Real-time listener for received messages
+      const unsubscribe2 = firestore()
+        .collection('messages')
+        .where('receiverId', '==', currentUser.uid)
+        .orderBy('timestamp', 'desc')
+        .onSnapshot(
+          async (receivedSnapshot) => {
+            console.log('📬 Received messages updated');
+            
+            // Get sent messages
+            const sentSnapshot = await firestore()
+              .collection('messages')
+              .where('senderId', '==', currentUser.uid)
+              .orderBy('timestamp', 'desc')
+              .get();
+
+            const allMessages = [...sentSnapshot.docs, ...receivedSnapshot.docs];
+            await processMessages(allMessages);
+          },
+          (error) => {
+            if (error.code !== 'permission-denied') {
+              console.error('❌ Error in received messages listener:', error);
+            }
+            setLoading(false);
+          }
+        );
+
+      console.log('✅ Chat list listeners active');
+
+      return () => {
+        console.log('🔌 Unsubscribing from chat list listeners');
+        unsubscribe1?.();
+        unsubscribe2?.();
+      };
     } catch (error) {
       console.error('Error loading chats:', error);
       setLoading(false);
@@ -119,6 +190,7 @@ export default function ChatsListScreen() {
       onPress={() => handleChatPress(item.userId)}
       activeOpacity={0.7}
     >
+      {/* Avatar */}
       {item.profilePicture ? (
         <Image
           source={{ uri: `data:image/jpeg;base64,${item.profilePicture}` }}
@@ -132,6 +204,7 @@ export default function ChatsListScreen() {
         </View>
       )}
 
+      {/* Chat Info */}
       <View style={styles.chatInfo}>
         <Text style={styles.chatName} numberOfLines={1}>
           {item.customNickname || item.username}
@@ -143,7 +216,19 @@ export default function ChatsListScreen() {
         )}
       </View>
 
-      <Ionicons name="chevron-forward" size={20} color="#3C3C3E" />
+      {/* Unread Badge */}
+      {item.unreadCount > 0 && (
+        <View style={styles.unreadBadge}>
+          <Text style={styles.unreadText}>
+            {item.unreadCount > 9 ? '+9' : item.unreadCount}
+          </Text>
+        </View>
+      )}
+
+      {/* Chevron */}
+      {item.unreadCount === 0 && (
+        <Ionicons name="chevron-forward" size={20} color="#3C3C3E" />
+      )}
     </TouchableOpacity>
   );
 
@@ -254,6 +339,21 @@ const styles = StyleSheet.create({
   chatUsername: {
     fontSize: 15,
     color: '#8E8E93',
+  },
+  unreadBadge: {
+    backgroundColor: '#667eea',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    marginLeft: 8,
+  },
+  unreadText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   emptyState: {
     flex: 1,

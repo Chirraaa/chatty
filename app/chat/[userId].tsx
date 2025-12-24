@@ -1,4 +1,4 @@
-// app/chat/[userId].tsx - Improved with better safe area handling
+// app/chat/[userId].tsx - Enhanced with real-time updates and read receipts
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -9,6 +9,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  AppState,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +22,7 @@ import messageService, { Message } from '@/services/message.service';
 import authService from '@/services/auth.service';
 import callService from '@/services/call.service';
 import chatSettingsService from '@/services/chat-settings.service';
+import notificationService from '@/services/notification.service';
 
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -31,24 +33,58 @@ export default function ChatScreen() {
   const [backgroundColor, setBackgroundColor] = useState('#000000');
   const [isInitiatingCall, setIsInitiatingCall] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     if (!userId) return;
 
+    // Set current chat for notification service
+    notificationService.setCurrentChat(userId);
+
+    // Mark messages as read
+    messageService.markMessagesAsRead(userId);
+
     loadUserProfile();
     loadChatSettings();
     
+    console.log('📡 Setting up message subscription for user:', userId);
     const unsubscribe = messageService.subscribeToMessages(
       userId,
       (newMessages) => {
+        console.log(`📬 Received ${newMessages.length} messages`);
         setMessages(newMessages);
+        
+        // Mark as read when messages arrive
+        setTimeout(() => {
+          messageService.markMessagesAsRead(userId);
+        }, 500);
+        
+        // Auto-scroll to bottom
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
     );
 
-    return () => unsubscribe();
+    // Handle app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        // App came to foreground, mark messages as read
+        console.log('📱 App came to foreground, marking messages as read');
+        messageService.markMessagesAsRead(userId);
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      console.log('🔌 Cleaning up chat screen');
+      notificationService.setCurrentChat(null);
+      unsubscribe();
+      subscription.remove();
+    };
   }, [userId]);
 
   const loadUserProfile = async () => {
@@ -110,6 +146,12 @@ export default function ChatScreen() {
 
   const handleHeaderPress = () => {
     router.push(`/contact-profile/${userId}`);
+  };
+
+  const handleSendComplete = () => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   const displayName = customNickname || userProfile?.username || 'Chat';
@@ -200,18 +242,18 @@ export default function ChatScreen() {
               />
             )}
             contentContainerStyle={styles.messagesList}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+            onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
             showsVerticalScrollIndicator={false}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+            }}
           />
 
           {/* Chat Input */}
           <ChatInput
             receiverId={userId}
-            onSendComplete={() => {
-              setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
-              }, 100);
-            }}
+            onSendComplete={handleSendComplete}
           />
         </View>
       </KeyboardAvoidingView>

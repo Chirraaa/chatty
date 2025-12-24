@@ -1,4 +1,4 @@
-// app/call/[callId].tsx - Enhanced with proper audio/video handling and draggable PIP
+// app/call/[callId].tsx - Fixed PIP with both streams and proper backgrounding
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -7,9 +7,9 @@ import {
   Dimensions,
   PanResponder,
   Animated as RNAnimated,
-  Modal,
   Alert,
   Image,
+  AppState,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
@@ -42,8 +42,8 @@ export default function CallScreen() {
   const [isPipMode, setIsPipMode] = useState(false);
   const [pipSize, setPipSize] = useState<'small' | 'large'>('small');
   const pan = useRef(new RNAnimated.ValueXY({ x: SCREEN_WIDTH - 140, y: 100 })).current;
-  const currentPanPosition = useRef({ x: SCREEN_WIDTH - 140, y: 100 });
   const lastTap = useRef(0);
+  const appState = useRef(AppState.currentState);
 
   // Call duration timer
   useEffect(() => {
@@ -56,6 +56,28 @@ export default function CallScreen() {
     return () => clearInterval(interval);
   }, [callStatus]);
 
+  // Handle app state changes - keep call active in background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      console.log('📱 App state changed:', nextAppState);
+      
+      if (
+        appState.current.match(/active/) &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        // App going to background - enable PIP mode
+        console.log('📱 App backgrounded - enabling PIP');
+        setIsPipMode(true);
+      }
+      
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   // Format duration as MM:SS
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -63,31 +85,30 @@ export default function CallScreen() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Track pan position changes
-  useEffect(() => {
-    const listenerId = pan.addListener((value) => {
-      currentPanPosition.current = value;
-    });
-    
-    return () => {
-      pan.removeListener(listenerId);
-    };
-  }, []);
-
-  // PIP Pan Responder with bounds checking
+  // PIP Pan Responder with proper bounds
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => isPipMode,
-      onPanResponderMove: RNAnimated.event([null, { dx: pan.x, dy: pan.y }], {
-        useNativeDriver: false,
-      }),
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        pan.setOffset({
+          x: (pan.x as any)._value,
+          y: (pan.y as any)._value,
+        });
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: RNAnimated.event(
+        [null, { dx: pan.x, dy: pan.y }],
+        { useNativeDriver: false }
+      ),
       onPanResponderRelease: (_, gestureState) => {
+        pan.flattenOffset();
+        
         const pipWidth = pipSize === 'small' ? 120 : 180;
         const pipHeight = pipSize === 'small' ? 160 : 240;
         
-        // Get current position
-        let finalX = currentPanPosition.current.x;
-        let finalY = currentPanPosition.current.y;
+        let finalX = (pan.x as any)._value;
+        let finalY = (pan.y as any)._value;
         
         // Snap to nearest edge horizontally
         if (gestureState.moveX < SCREEN_WIDTH / 2) {
@@ -98,13 +119,14 @@ export default function CallScreen() {
         
         // Keep within vertical bounds
         const maxY = SCREEN_HEIGHT - pipHeight - 20;
-        finalY = Math.max(insets.top + 20, Math.min(finalY, maxY));
+        const minY = insets.top + 20;
+        finalY = Math.max(minY, Math.min(finalY, maxY));
         
         RNAnimated.spring(pan, {
           toValue: { x: finalX, y: finalY },
           useNativeDriver: false,
-          tension: 40,
-          friction: 7,
+          tension: 50,
+          friction: 8,
         }).start();
       },
     })
@@ -136,7 +158,6 @@ export default function CallScreen() {
         setIsVideoCall(callData.isVideo);
         setIsVideoEnabled(callData.isVideo);
         
-        // Get other user's info
         const currentUserId = authService.getCurrentUser()?.uid;
         const otherUserId = callData.callerId === currentUserId 
           ? callData.receiverId 
@@ -219,7 +240,6 @@ export default function CallScreen() {
 
   const handleToggleVideo = async () => {
     if (!isVideoEnabled && !isVideoCall) {
-      // Enabling video for the first time in an audio call
       Alert.alert(
         'Enable Video',
         'This will convert the audio call to a video call. Continue?',
@@ -233,12 +253,10 @@ export default function CallScreen() {
                 setIsVideoEnabled(true);
                 setIsVideoCall(true);
                 
-                // Update call document
                 await firestore().collection('calls').doc(callId).update({
                   isVideo: true,
                 });
                 
-                // Refresh local stream
                 const local = callService.getLocalStream();
                 setLocalStream(local);
               } catch (error) {
@@ -250,7 +268,6 @@ export default function CallScreen() {
         ]
       );
     } else {
-      // Just toggle video on/off
       const enabled = callService.toggleCamera();
       setIsVideoEnabled(enabled);
     }
@@ -290,79 +307,95 @@ export default function CallScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <Modal visible={true} transparent animationType="none" statusBarTranslucent>
-          <View style={styles.pipBackground}>
-            <RNAnimated.View
-              style={[
-                styles.pipContainer,
-                {
-                  width: pipWidth,
-                  height: pipHeight,
-                  transform: [{ translateX: pan.x }, { translateY: pan.y }],
-                },
-              ]}
-              {...panResponder.panHandlers}
+        
+        {/* Floating PIP Window */}
+        <View style={styles.pipOverlay} pointerEvents="box-none">
+          <RNAnimated.View
+            style={[
+              styles.pipContainer,
+              {
+                width: pipWidth,
+                height: pipHeight,
+                transform: [
+                  { translateX: pan.x },
+                  { translateY: pan.y },
+                ],
+              },
+            ]}
+            {...panResponder.panHandlers}
+          >
+            <TouchableOpacity
+              style={styles.pipVideoContainer}
+              onPress={handlePipDoubleTap}
+              activeOpacity={0.9}
             >
-              <TouchableOpacity
-                style={styles.pipVideoContainer}
-                onPress={handlePipDoubleTap}
-                activeOpacity={0.9}
-              >
-                {/* Show remote video if available and video is enabled, otherwise show avatar */}
-                {remoteStream && isVideoCall ? (
-                  <RTCView
-                    streamURL={remoteStream.toURL()}
-                    style={styles.pipVideo}
-                    objectFit="cover"
-                    mirror={false}
-                  />
-                ) : (
-                  <LinearGradient
-                    colors={['#667eea', '#764ba2']}
-                    style={styles.pipPlaceholder}
-                  >
-                    {otherUserPicture ? (
-                      <Image
-                        source={{ uri: `data:image/jpeg;base64,${otherUserPicture}` }}
-                        style={styles.pipAvatarImage}
-                      />
-                    ) : (
-                      <Text style={styles.pipAvatarText}>
-                        {otherUserName.charAt(0).toUpperCase()}
-                      </Text>
-                    )}
-                  </LinearGradient>
-                )}
-
-                {/* Call duration badge */}
-                {callStatus === 'connected' && (
-                  <View style={styles.pipDurationBadge}>
-                    <Text style={styles.pipDurationText}>
-                      {formatDuration(callDuration)}
+              {/* Remote video (main) */}
+              {remoteStream && isVideoCall ? (
+                <RTCView
+                  streamURL={remoteStream.toURL()}
+                  style={styles.pipRemoteVideo}
+                  objectFit="cover"
+                  mirror={false}
+                />
+              ) : (
+                <LinearGradient
+                  colors={['#667eea', '#764ba2']}
+                  style={styles.pipPlaceholder}
+                >
+                  {otherUserPicture ? (
+                    <Image
+                      source={{ uri: `data:image/jpeg;base64,${otherUserPicture}` }}
+                      style={styles.pipAvatarImage}
+                    />
+                  ) : (
+                    <Text style={styles.pipAvatarText}>
+                      {otherUserName.charAt(0).toUpperCase()}
                     </Text>
-                  </View>
-                )}
+                  )}
+                </LinearGradient>
+              )}
 
-                {/* Controls */}
-                <View style={styles.pipControls}>
-                  <TouchableOpacity
-                    style={styles.pipButton}
-                    onPress={handleMaximize}
-                  >
-                    <Ionicons name="expand" size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.pipButton, styles.pipEndButton]}
-                    onPress={handleEndCall}
-                  >
-                    <Ionicons name="call" size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
+              {/* Local video (small corner) - Only if video enabled */}
+              {localStream && isVideoEnabled && (
+                <View style={styles.pipLocalVideoContainer}>
+                  <RTCView
+                    streamURL={localStream.toURL()}
+                    style={styles.pipLocalVideo}
+                    objectFit="cover"
+                    mirror={true}
+                  />
                 </View>
-              </TouchableOpacity>
-            </RNAnimated.View>
-          </View>
-        </Modal>
+              )}
+
+              {/* Call duration badge */}
+              {callStatus === 'connected' && (
+                <View style={styles.pipDurationBadge}>
+                  <Text style={styles.pipDurationText}>
+                    {formatDuration(callDuration)}
+                  </Text>
+                </View>
+              )}
+
+              {/* Controls */}
+              <View style={styles.pipControls}>
+                <TouchableOpacity
+                  style={styles.pipButton}
+                  onPress={handleMaximize}
+                >
+                  <Ionicons name="expand" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.pipButton, styles.pipEndButton]}
+                  onPress={handleEndCall}
+                  disabled={isEnding}
+                >
+                  <Ionicons name="call" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </RNAnimated.View>
+        </View>
       </>
     );
   }
@@ -464,7 +497,11 @@ export default function CallScreen() {
             </TouchableOpacity>
 
             {/* End Call Button */}
-            <TouchableOpacity onPress={handleEndCall} style={styles.controlWrapper}>
+            <TouchableOpacity 
+              onPress={handleEndCall} 
+              style={styles.controlWrapper}
+              disabled={isEnding}
+            >
               <LinearGradient
                 colors={['#FF3B30', '#C7001E']}
                 style={styles.endCallButton}
@@ -678,10 +715,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   // PIP Styles
-  pipBackground: {
-    flex: 1,
+  pipOverlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
-    pointerEvents: 'box-none',
   },
   pipContainer: {
     position: 'absolute',
@@ -694,11 +730,12 @@ const styles = StyleSheet.create({
     elevation: 16,
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#000',
   },
   pipVideoContainer: {
     flex: 1,
   },
-  pipVideo: {
+  pipRemoteVideo: {
     flex: 1,
   },
   pipPlaceholder: {
@@ -715,12 +752,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  pipLocalVideoContainer: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 40,
+    height: 56,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  pipLocalVideo: {
+    flex: 1,
+  },
   pipDurationBadge: {
     position: 'absolute',
     top: 8,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
+    left: 8,
   },
   pipDurationText: {
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
