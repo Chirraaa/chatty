@@ -1,10 +1,18 @@
-// components/incoming-call.tsx - Minimalistic clean design
+// components/incoming-call.tsx - Clean minimalistic incoming call UI
 import { useEffect, useState } from 'react';
 import { StyleSheet, View, Modal, Alert, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withRepeat, 
+  withTiming,
+  Easing 
+} from 'react-native-reanimated';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
@@ -26,16 +34,22 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export function IncomingCallListener() {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const pulseScale = useSharedValue(1);
+
+  useEffect(() => {
+    pulseScale.value = withRepeat(
+      withTiming(1.1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, []);
 
   useEffect(() => {
     const currentUser = auth().currentUser;
     
     if (!currentUser) {
-      console.log('👤 No user, skipping incoming call listener setup');
       return;
     }
-
-    console.log('📞 Setting up incoming call listener for:', currentUser.uid);
 
     const unsubscribe = firestore()
       .collection('calls')
@@ -43,10 +57,7 @@ export function IncomingCallListener() {
       .where('status', '==', 'calling')
       .onSnapshot(
         async (snapshot) => {
-          if (!snapshot) {
-            console.warn('⚠️ Received null snapshot in incoming call listener');
-            return;
-          }
+          if (!snapshot) return;
 
           try {
             for (const change of snapshot.docChanges()) {
@@ -71,22 +82,13 @@ export function IncomingCallListener() {
         },
         (error: FirebaseError) => {
           if (error.code === 'permission-denied') {
-            console.log('🔒 Incoming call listener closed (expected after sign out)');
             return;
           }
-          
           console.error('❌ Error in incoming call listener:', error);
-          
-          if (error.code) {
-            console.error(`💡 Firebase error code: ${error.code}`);
-          }
         }
       );
 
-    return () => {
-      console.log('🧹 Cleaning up incoming call listener');
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   const handleAccept = async () => {
@@ -118,63 +120,90 @@ export function IncomingCallListener() {
     }
   };
 
+  const avatarAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: pulseScale.value }],
+    };
+  });
+
   if (!incomingCall) return null;
 
   return (
-    <Modal
-      visible={true}
-      transparent
-      animationType="fade"
-    >
-      <BlurView intensity={100} style={styles.modalOverlay}>
-        <View style={styles.callCard}>
-          {/* Caller Avatar */}
-          <View style={styles.avatarContainer}>
-            {incomingCall.callerPicture ? (
-              <Image
-                source={{ uri: `data:image/jpeg;base64,${incomingCall.callerPicture}` }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>
-                  {incomingCall.callerName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </View>
+    <Modal visible={true} transparent animationType="fade" statusBarTranslucent>
+      <BlurView intensity={100} style={styles.container}>
+        <View style={styles.content}>
+          {/* Avatar with pulse animation */}
+          <Animated.View style={[styles.avatarWrapper, avatarAnimatedStyle]}>
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              style={styles.avatarGradient}
+            >
+              {incomingCall.callerPicture ? (
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${incomingCall.callerPicture}` }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarText}>
+                    {incomingCall.callerName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </LinearGradient>
+          </Animated.View>
 
-          {/* Caller Name */}
-          <Text style={styles.callerName}>
-            {incomingCall.callerName}
-          </Text>
-
-          {/* Call Type */}
-          <View style={styles.callTypeContainer}>
-            <Ionicons
-              name={incomingCall.isVideo ? 'videocam' : 'call'}
-              size={16}
-              color="#8E8E93"
-            />
-            <Text style={styles.callTypeText}>
-              Incoming {incomingCall.isVideo ? 'video' : 'voice'} call
+          {/* Caller Info */}
+          <View style={styles.infoContainer}>
+            <Text style={styles.callerName} numberOfLines={1}>
+              {incomingCall.callerName}
             </Text>
+            <View style={styles.callTypeRow}>
+              <Ionicons
+                name={incomingCall.isVideo ? 'videocam' : 'call'}
+                size={16}
+                color="#8E8E93"
+              />
+              <Text style={styles.callType}>
+                {incomingCall.isVideo ? 'Video' : 'Voice'} Call
+              </Text>
+            </View>
           </View>
 
           {/* Action Buttons */}
-          <View style={styles.actionButtons}>
+          <View style={styles.actions}>
+            {/* Decline Button */}
             <TouchableOpacity
               onPress={handleDecline}
-              style={styles.declineButton}
+              style={styles.actionButton}
+              activeOpacity={0.8}
             >
-              <Ionicons name="close" size={32} color="#FFFFFF" />
+              <LinearGradient
+                colors={['#FF3B30', '#C7001E']}
+                style={styles.buttonGradient}
+              >
+                <Ionicons name="close" size={32} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={styles.actionLabel}>Decline</Text>
             </TouchableOpacity>
 
+            {/* Accept Button */}
             <TouchableOpacity
               onPress={handleAccept}
-              style={styles.acceptButton}
+              style={styles.actionButton}
+              activeOpacity={0.8}
             >
-              <Ionicons name="call" size={32} color="#FFFFFF" />
+              <LinearGradient
+                colors={['#34C759', '#248A3D']}
+                style={styles.buttonGradient}
+              >
+                <Ionicons 
+                  name={incomingCall.isVideo ? 'videocam' : 'call'} 
+                  size={32} 
+                  color="#FFFFFF" 
+                />
+              </LinearGradient>
+              <Text style={styles.actionLabel}>Accept</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -184,91 +213,93 @@ export function IncomingCallListener() {
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
+  container: {
     flex: 1,
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
     justifyContent: 'center',
-    padding: 32,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  callCard: {
-    width: '100%',
-    maxWidth: 360,
     alignItems: 'center',
-    padding: 40,
-    backgroundColor: 'rgba(28, 28, 30, 0.95)',
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 24,
   },
-  avatarContainer: {
-    marginBottom: 24,
+  content: {
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  avatarWrapper: {
+    marginBottom: 32,
+  },
+  avatarGradient: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
   },
   avatarPlaceholder: {
-    width: 96,
-    height: 96,
-    backgroundColor: '#667eea',
-    borderRadius: 48,
-    alignItems: 'center',
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: '#1C1C1E',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   avatarText: {
+    fontSize: 56,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 40,
-    fontWeight: '600',
+  },
+  infoContainer: {
+    alignItems: 'center',
+    marginBottom: 48,
   },
   callerName: {
-    fontSize: 28,
-    fontWeight: '600',
+    fontSize: 32,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 8,
     textAlign: 'center',
   },
-  callTypeContainer: {
+  callTypeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 40,
+    gap: 6,
   },
-  callTypeText: {
-    marginLeft: 8,
-    fontSize: 15,
+  callType: {
+    fontSize: 16,
     color: '#8E8E93',
+    fontWeight: '500',
   },
-  actionButtons: {
+  actions: {
     flexDirection: 'row',
-    gap: 24,
+    justifyContent: 'center',
+    gap: 48,
     width: '100%',
-    justifyContent: 'center',
   },
-  declineButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FF3B30',
+  actionButton: {
     alignItems: 'center',
+    gap: 12,
+  },
+  buttonGradient: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     justifyContent: 'center',
-    shadowColor: '#FF3B30',
+    alignItems: 'center',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 12,
   },
-  acceptButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#34C759',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#34C759',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
+  actionLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

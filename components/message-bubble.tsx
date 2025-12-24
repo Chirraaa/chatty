@@ -1,4 +1,4 @@
-// components/message-bubble.tsx - With edit/delete and proper sizing
+// components/message-bubble.tsx - Cleaner message bubbles with gradients
 import { StyleSheet, View, Image, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { Text } from '@ui-kitten/components';
 import { router } from 'expo-router';
@@ -79,7 +79,7 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Save',
-          onPress: async (newText : any) => {
+          onPress: async (newText: any) => {
             if (newText && newText.trim()) {
               try {
                 await messageService.editMessage(message.id, newText.trim());
@@ -151,11 +151,14 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
               style={styles.senderAvatar}
             />
           ) : (
-            <View style={styles.senderAvatarPlaceholder}>
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              style={styles.senderAvatarPlaceholder}
+            >
               <Text style={styles.senderAvatarText}>
                 {senderName?.charAt(0).toUpperCase() || '?'}
               </Text>
-            </View>
+            </LinearGradient>
           )}
         </View>
       )}
@@ -165,7 +168,6 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
         {message.type === 'text' && message.content && (
           <View style={[
             styles.bubble,
-            isSentByMe ? styles.sentBubble : styles.receivedBubble,
             message.decryptionError && styles.errorBubble,
           ]}>
             {isSentByMe && !message.decryptionError && (
@@ -177,25 +179,32 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
               />
             )}
             
-            <Text style={[
-              styles.messageText,
-              isSentByMe ? styles.sentText : styles.receivedText,
-              message.decryptionError && styles.errorText,
-            ]}>
-              {message.content}
-            </Text>
+            {!isSentByMe && !message.decryptionError && (
+              <View style={[StyleSheet.absoluteFillObject, styles.receivedBubbleBackground]} />
+            )}
             
-            {message.encrypted && !message.decryptionError && (
-              <Text style={[styles.encryptedBadge, isSentByMe && styles.encryptedBadgeSent]}>
-                🔒
+            <View style={styles.messageContent}>
+              <Text style={[
+                styles.messageText,
+                message.decryptionError && styles.errorText,
+              ]}>
+                {message.content}
               </Text>
-            )}
-
-            {message.edited && !message.decryptionError && (
-              <Text style={[styles.editedBadge, isSentByMe ? styles.sentText : styles.receivedText]}>
-                (edited)
-              </Text>
-            )}
+              
+              <View style={styles.messageFooter}>
+                <Text style={styles.timestamp}>
+                  {formatTime(message.timestamp)}
+                </Text>
+                
+                {message.encrypted && !message.decryptionError && (
+                  <Text style={styles.encryptedBadge}>🔒</Text>
+                )}
+                
+                {message.edited && !message.decryptionError && (
+                  <Text style={styles.editedBadge}>edited</Text>
+                )}
+              </View>
+            </View>
           </View>
         )}
 
@@ -218,6 +227,11 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
                 <Text style={styles.encryptedBadgeText}>🔒</Text>
               </View>
             )}
+            <View style={styles.imageTimestamp}>
+              <Text style={styles.imageTimestampText}>
+                {formatTime(message.timestamp)}
+              </Text>
+            </View>
           </TouchableOpacity>
         )}
 
@@ -229,14 +243,6 @@ export function MessageBubble({ message, showSenderInfo, senderName, senderPictu
             </Text>
           </View>
         )}
-
-        {/* Timestamp */}
-        <Text style={[
-          styles.timestamp,
-          isSentByMe ? styles.sentTimestamp : styles.receivedTimestamp,
-        ]}>
-          {formatTime(message.timestamp)}
-        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -270,7 +276,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#333',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -288,15 +293,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     overflow: 'hidden',
     alignSelf: 'flex-start',
+    minWidth: 80,
   },
-  sentBubble: {
-    borderBottomRightRadius: 4,
-    alignSelf: 'flex-end',
-  },
-  receivedBubble: {
-    backgroundColor: '#2C2C2E',
-    borderBottomLeftRadius: 4,
-    alignSelf: 'flex-start',
+  receivedBubbleBackground: {
+    backgroundColor: '#1C1C1E',
   },
   errorBubble: {
     backgroundColor: '#3A1A1A',
@@ -304,17 +304,15 @@ const styles = StyleSheet.create({
     borderColor: '#5A2A2A',
   },
   deletedBubble: {
-    backgroundColor: '#2C2C2E',
+    backgroundColor: '#1C1C1E',
     opacity: 0.6,
+  },
+  messageContent: {
+    gap: 4,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
-  },
-  sentText: {
-    color: '#FFFFFF',
-  },
-  receivedText: {
     color: '#FFFFFF',
   },
   errorText: {
@@ -322,41 +320,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   deletedText: {
-    color: '#888888',
+    color: '#8E8E93',
     fontSize: 14,
     fontStyle: 'italic',
   },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  timestamp: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
   encryptedBadge: {
-    position: 'absolute',
-    bottom: 4,
-    right: 8,
     fontSize: 10,
     opacity: 0.6,
   },
-  encryptedBadgeSent: {
-    opacity: 0.8,
-  },
   editedBadge: {
-    fontSize: 11,
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.5)',
     fontStyle: 'italic',
-    marginTop: 4,
-    opacity: 0.7,
   },
   imageBubble: {
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#2C2C2E',
+    backgroundColor: '#1C1C1E',
   },
   image: {
     width: 200,
     height: 200,
-    borderRadius: 16,
+    borderRadius: 20,
   },
   imageEncryptedBadge: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -365,16 +366,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
   },
-  timestamp: {
-    marginTop: 4,
+  imageTimestamp: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  imageTimestampText: {
     fontSize: 11,
-    color: '#8E8E93',
-  },
-  sentTimestamp: {
-    textAlign: 'right',
-  },
-  receivedTimestamp: {
-    textAlign: 'left',
-    marginLeft: 4,
+    color: '#FFFFFF',
+    fontWeight: '500',
   },
 });

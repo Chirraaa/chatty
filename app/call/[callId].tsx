@@ -6,15 +6,15 @@ import {
   TouchableOpacity,
   Dimensions,
   PanResponder,
-  Animated,
-  Platform,
+  Animated as RNAnimated,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
 import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import callService from '@/services/call.service';
 import firestore from '@react-native-firebase/firestore';
 
@@ -29,13 +29,32 @@ export default function CallScreen() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [callStatus, setCallStatus] = useState('connecting');
   const [isEnding, setIsEnding] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
   
   // PIP state
   const [isPipMode, setIsPipMode] = useState(false);
   const [pipSize, setPipSize] = useState<'small' | 'large'>('small');
-  const pan = useRef(new Animated.ValueXY({ x: SCREEN_WIDTH - 140, y: 100 })).current;
+  const pan = useRef(new RNAnimated.ValueXY({ x: SCREEN_WIDTH - 140, y: 100 })).current;
   const currentPanPosition = useRef({ x: SCREEN_WIDTH - 140, y: 100 });
   const lastTap = useRef(0);
+
+  // Call duration timer
+  useEffect(() => {
+    if (callStatus !== 'connected') return;
+
+    const interval = setInterval(() => {
+      setCallDuration((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [callStatus]);
+
+  // Format duration as MM:SS
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Track pan position changes
   useEffect(() => {
@@ -52,14 +71,14 @@ export default function CallScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => isPipMode,
-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+      onPanResponderMove: RNAnimated.event([null, { dx: pan.x, dy: pan.y }], {
         useNativeDriver: false,
       }),
       onPanResponderRelease: (_, gestureState) => {
         const currentY = currentPanPosition.current.y;
         const x = gestureState.moveX < SCREEN_WIDTH / 2 ? 20 : SCREEN_WIDTH - (pipSize === 'small' ? 140 : 200);
         
-        Animated.spring(pan, {
+        RNAnimated.spring(pan, {
           toValue: { x, y: currentY },
           useNativeDriver: false,
         }).start();
@@ -187,7 +206,7 @@ export default function CallScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.pipBackground}>
-          <Animated.View
+          <RNAnimated.View
             style={[
               styles.pipContainer,
               {
@@ -211,26 +230,31 @@ export default function CallScreen() {
                   mirror={false}
                 />
               ) : (
-                <View style={styles.pipPlaceholder}>
+                <LinearGradient
+                  colors={['#667eea', '#764ba2']}
+                  style={styles.pipPlaceholder}
+                >
                   <Ionicons name="person" size={40} color="#FFFFFF" />
-                </View>
+                </LinearGradient>
               )}
 
-              <TouchableOpacity
-                style={styles.pipMaximizeButton}
-                onPress={handleMaximize}
-              >
-                <Ionicons name="expand" size={16} color="#FFFFFF" />
-              </TouchableOpacity>
+              <View style={styles.pipControls}>
+                <TouchableOpacity
+                  style={styles.pipButton}
+                  onPress={handleMaximize}
+                >
+                  <Ionicons name="expand" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.pipEndButton}
-                onPress={handleEndCall}
-              >
-                <Ionicons name="call" size={16} color="#FFFFFF" />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pipButton, styles.pipEndButton]}
+                  onPress={handleEndCall}
+                >
+                  <Ionicons name="call" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
-          </Animated.View>
+          </RNAnimated.View>
         </View>
       </>
     );
@@ -251,71 +275,107 @@ export default function CallScreen() {
             mirror={false}
           />
         ) : (
-          <View style={styles.waitingContainer}>
+          <LinearGradient
+            colors={['#000000', '#1A1A1A']}
+            style={styles.waitingContainer}
+          >
             <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={64} color="#FFFFFF" />
+              <LinearGradient
+                colors={['#667eea', '#764ba2']}
+                style={styles.avatarGradient}
+              >
+                <Ionicons name="person" size={64} color="#FFFFFF" />
+              </LinearGradient>
             </View>
             <Text style={styles.statusText}>
-              {callStatus === 'connecting' ? 'Connecting...' : 'Waiting...'}
+              {callStatus === 'connecting' ? 'Connecting...' : 'Waiting for response...'}
             </Text>
-          </View>
+          </LinearGradient>
         )}
 
         {/* Local Video (Picture-in-Picture) */}
         {localStream && !isVideoOff && (
-          <View style={[styles.localVideoContainer, { top: 60 + insets.top }]}>
+          <Animated.View 
+            entering={FadeIn} 
+            exiting={FadeOut}
+            style={[styles.localVideoContainer, { top: 80 + insets.top }]}
+          >
             <RTCView
               streamURL={localStream.toURL()}
               style={styles.localVideo}
               objectFit="cover"
               mirror={true}
             />
-          </View>
+          </Animated.View>
         )}
 
-        {/* Status Indicator */}
-        <View style={[styles.statusIndicator, { top: 60 + insets.top }]}>
-          <View style={[styles.statusDot, callStatus === 'connected' && styles.statusDotConnected]} />
-          <Text style={styles.statusIndicatorText}>
-            {callStatus === 'connected' ? 'Connected' : 'Connecting'}
-          </Text>
-        </View>
+        {/* Status Bar */}
+        <View style={[styles.statusBar, { top: 60 + insets.top }]}>
+          <View style={styles.statusLeft}>
+            <View style={[styles.statusDot, callStatus === 'connected' && styles.statusDotConnected]} />
+            <Text style={styles.statusText}>
+              {callStatus === 'connected' ? formatDuration(callDuration) : 'Connecting'}
+            </Text>
+          </View>
 
-        {/* Top Controls */}
-        <View style={[styles.topControls, { top: 60 + insets.top }]}>
-          <TouchableOpacity onPress={handleMinimize} style={styles.topButton}>
-            <Ionicons name="remove" size={24} color="#FFFFFF" />
+          <TouchableOpacity onPress={handleMinimize} style={styles.minimizeButton}>
+            <Ionicons name="remove-circle-outline" size={28} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
         {/* Bottom Controls */}
-        <BlurView intensity={80} style={[styles.controlsContainer, { paddingBottom: insets.bottom + 40 }]}>
+        <View style={[styles.controlsContainer, { paddingBottom: Math.max(insets.bottom + 32, 48) }]}>
           <View style={styles.controlsRow}>
+            {/* Mute Button */}
             <TouchableOpacity
               onPress={handleToggleMute}
-              style={[styles.controlButton, isMuted && styles.controlButtonActive]}
+              style={styles.controlWrapper}
             >
-              <Ionicons name={isMuted ? 'mic-off' : 'mic'} size={28} color="#FFFFFF" />
+              <LinearGradient
+                colors={isMuted ? ['#FF3B30', '#C7001E'] : ['rgba(255, 255, 255, 0.15)', 'rgba(255, 255, 255, 0.05)']}
+                style={styles.controlButton}
+              >
+                <Ionicons name={isMuted ? 'mic-off' : 'mic'} size={28} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleEndCall} style={styles.endCallButton}>
-              <Ionicons name="call" size={32} color="#FFFFFF" />
+            {/* End Call Button */}
+            <TouchableOpacity onPress={handleEndCall} style={styles.controlWrapper}>
+              <LinearGradient
+                colors={['#FF3B30', '#C7001E']}
+                style={styles.endCallButton}
+              >
+                <Ionicons name="call" size={32} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={styles.controlLabel}>End</Text>
             </TouchableOpacity>
 
+            {/* Video Toggle Button */}
             <TouchableOpacity
               onPress={handleToggleVideo}
-              style={[styles.controlButton, isVideoOff && styles.controlButtonActive]}
+              style={styles.controlWrapper}
             >
-              <Ionicons name={isVideoOff ? 'videocam-off' : 'videocam'} size={28} color="#FFFFFF" />
+              <LinearGradient
+                colors={isVideoOff ? ['#FF3B30', '#C7001E'] : ['rgba(255, 255, 255, 0.15)', 'rgba(255, 255, 255, 0.05)']}
+                style={styles.controlButton}
+              >
+                <Ionicons name={isVideoOff ? 'videocam-off' : 'videocam'} size={28} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={styles.controlLabel}>{isVideoOff ? 'Video Off' : 'Video On'}</Text>
             </TouchableOpacity>
           </View>
 
+          {/* Secondary Controls */}
           {!isVideoOff && (
-            <TouchableOpacity onPress={handleSwitchCamera} style={styles.switchCameraButton}>
-              <Ionicons name="camera-reverse" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
+            <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.secondaryControls}>
+              <TouchableOpacity onPress={handleSwitchCamera} style={styles.secondaryButton}>
+                <Ionicons name="camera-reverse-outline" size={24} color="#FFFFFF" />
+                <Text style={styles.secondaryButtonLabel}>Flip</Text>
+              </TouchableOpacity>
+            </Animated.View>
           )}
-        </BlurView>
+        </View>
       </View>
     </>
   );
@@ -333,125 +393,138 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1A1A1A',
   },
   avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    backgroundColor: '#333',
-    borderRadius: 60,
+    marginBottom: 24,
+  },
+  avatarGradient: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
   statusText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: '600',
   },
   localVideoContainer: {
     position: 'absolute',
     right: 16,
     width: 100,
     height: 140,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 12,
   },
   localVideo: {
     flex: 1,
   },
-  statusIndicator: {
+  statusBar: {
     position: 'absolute',
-    left: 16,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  statusLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 8,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#FFC107',
-    marginRight: 6,
   },
   statusDotConnected: {
     backgroundColor: '#34C759',
   },
-  statusIndicatorText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  topControls: {
-    position: 'absolute',
-    right: 132,
-    flexDirection: 'row',
-  },
-  topButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 20,
-    padding: 8,
+  minimizeButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 24,
+    padding: 6,
   },
   controlsContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 40,
-    paddingHorizontal: 32,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
   },
   controlsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 24,
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
     marginBottom: 16,
   },
-  controlButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  controlWrapper: {
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 8,
   },
-  controlButtonActive: {
-    backgroundColor: '#FF3B30',
-    borderColor: '#FF3B30',
-  },
-  endCallButton: {
+  controlButton: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  endCallButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#FF3B30',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.6,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 12,
   },
-  switchCameraButton: {
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingVertical: 10,
+  controlLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  secondaryControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginBottom: 8,
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 20,
-    borderRadius: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  secondaryButtonLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   // PIP Styles
   pipBackground: {
@@ -460,19 +533,18 @@ const styles = StyleSheet.create({
   },
   pipContainer: {
     position: 'absolute',
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 12,
-    borderWidth: 2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 16,
+    borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   pipVideoContainer: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
   },
   pipVideo: {
     flex: 1,
@@ -481,23 +553,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#333',
   },
-  pipMaximizeButton: {
+  pipControls: {
     position: 'absolute',
     top: 8,
+    left: 8,
     right: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  pipButton: {
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     borderRadius: 16,
-    padding: 6,
+    padding: 8,
   },
   pipEndButton: {
-    position: 'absolute',
-    bottom: 8,
-    left: '50%',
-    marginLeft: -20,
     backgroundColor: '#FF3B30',
-    borderRadius: 20,
-    padding: 8,
   },
 });

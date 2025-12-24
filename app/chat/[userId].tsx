@@ -1,4 +1,4 @@
-// app/chat/[userId].tsx - Fixed call handling with better error logging
+// app/chat/[userId].tsx - Improved with better safe area handling
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -7,11 +7,14 @@ import {
   Alert,
   TouchableOpacity,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ChatInput } from '@/components/chat-input';
 import { MessageBubble } from '@/components/message-bubble';
 import messageService, { Message } from '@/services/message.service';
@@ -70,28 +73,14 @@ export default function ChatScreen() {
   };
 
   const handleVoiceCall = async () => {
-    if (isInitiatingCall) {
-      console.log('⏳ Call already in progress...');
-      return;
-    }
+    if (isInitiatingCall) return;
 
     try {
       setIsInitiatingCall(true);
-      console.log('📞 Starting voice call to:', userId);
-      
       const callId = await callService.createCall(userId, false);
-      console.log('✅ Call created with ID:', callId);
-      
-      console.log('🚀 Navigating to call screen...');
       router.push(`/call/${callId}`);
     } catch (error: any) {
       console.error('❌ Error starting voice call:', error);
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        stack: error.stack,
-      });
-      
       Alert.alert(
         'Call Failed',
         error.message || 'Unable to start voice call. Please check permissions and try again.'
@@ -102,28 +91,14 @@ export default function ChatScreen() {
   };
 
   const handleVideoCall = async () => {
-    if (isInitiatingCall) {
-      console.log('⏳ Call already in progress...');
-      return;
-    }
+    if (isInitiatingCall) return;
 
     try {
       setIsInitiatingCall(true);
-      console.log('📹 Starting video call to:', userId);
-      
       const callId = await callService.createCall(userId, true);
-      console.log('✅ Call created with ID:', callId);
-      
-      console.log('🚀 Navigating to call screen...');
       router.push(`/call/${callId}`);
     } catch (error: any) {
       console.error('❌ Error starting video call:', error);
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        stack: error.stack,
-      });
-      
       Alert.alert(
         'Call Failed',
         error.message || 'Unable to start video call. Please check permissions and try again.'
@@ -143,66 +118,76 @@ export default function ChatScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
-        {/* Custom Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
-          </TouchableOpacity>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+      >
+        <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
+          {/* Custom Header */}
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0.8)', 'rgba(0, 0, 0, 0.5)']}
+            style={styles.header}
+          >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+              <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
 
-          <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress}>
-            {userProfile?.profilePicture ? (
-              <Image
-                source={{ uri: `data:image/jpeg;base64,${userProfile.profilePicture}` }}
-                style={styles.headerAvatar}
-              />
-            ) : (
-              <View style={styles.headerAvatarPlaceholder}>
-                <Text style={styles.headerAvatarText}>
-                  {displayName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View style={styles.headerInfo}>
-              <Text style={styles.headerName} numberOfLines={1}>
-                {displayName}
-              </Text>
-              {customNickname && (
-                <Text style={styles.headerUsername} numberOfLines={1}>
-                  @{userProfile?.username}
-                </Text>
+            <TouchableOpacity style={styles.headerCenter} onPress={handleHeaderPress}>
+              {userProfile?.profilePicture ? (
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${userProfile.profilePicture}` }}
+                  style={styles.headerAvatar}
+                />
+              ) : (
+                <LinearGradient
+                  colors={['#667eea', '#764ba2']}
+                  style={styles.headerAvatarPlaceholder}
+                >
+                  <Text style={styles.headerAvatarText}>
+                    {displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </LinearGradient>
               )}
+              <View style={styles.headerInfo}>
+                <Text style={styles.headerName} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                {customNickname && (
+                  <Text style={styles.headerUsername} numberOfLines={1}>
+                    @{userProfile?.username}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.headerActions}>
+              <TouchableOpacity 
+                onPress={handleVideoCall} 
+                style={styles.headerButton}
+                disabled={isInitiatingCall}
+              >
+                <Ionicons 
+                  name="videocam" 
+                  size={24} 
+                  color={isInitiatingCall ? "#666" : "#FFFFFF"} 
+                />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={handleVoiceCall} 
+                style={styles.headerButton}
+                disabled={isInitiatingCall}
+              >
+                <Ionicons 
+                  name="call" 
+                  size={24} 
+                  color={isInitiatingCall ? "#666" : "#FFFFFF"} 
+                />
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </LinearGradient>
 
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              onPress={handleVideoCall} 
-              style={styles.headerButton}
-              disabled={isInitiatingCall}
-            >
-              <Ionicons 
-                name="videocam" 
-                size={24} 
-                color={isInitiatingCall ? "#666" : "#FFFFFF"} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={handleVoiceCall} 
-              style={styles.headerButton}
-              disabled={isInitiatingCall}
-            >
-              <Ionicons 
-                name="call" 
-                size={24} 
-                color={isInitiatingCall ? "#666" : "#FFFFFF"} 
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Messages */}
-        <View style={styles.content}>
+          {/* Messages */}
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -219,6 +204,7 @@ export default function ChatScreen() {
             showsVerticalScrollIndicator={false}
           />
 
+          {/* Chat Input */}
           <ChatInput
             receiverId={userId}
             onSendComplete={() => {
@@ -228,7 +214,7 @@ export default function ChatScreen() {
             }}
           />
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </>
   );
 }
@@ -242,9 +228,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 8,
-    backgroundColor: '#1C1C1E',
     borderBottomWidth: 1,
-    borderBottomColor: '#2C2C2E',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   backButton: {
     padding: 4,
@@ -264,7 +249,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#667eea',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -294,12 +278,8 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 8,
   },
-  content: {
-    flex: 1,
-  },
   messagesList: {
     paddingVertical: 12,
     paddingHorizontal: 4,
-    paddingBottom: 80,
   },
 });

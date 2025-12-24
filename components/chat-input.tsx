@@ -1,8 +1,9 @@
-// components/chat-input.tsx - Fixed positioning for Android
+// components/chat-input.tsx - Clean input with proper safe area handling
 import React, { useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, TextInput, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import imageService from '@/services/image.service';
 import messageService from '@/services/message.service';
 
@@ -10,8 +11,6 @@ interface ChatInputProps {
   receiverId: string;
   onSendComplete?: () => void;
 }
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
   const [message, setMessage] = useState('');
@@ -55,27 +54,35 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
       <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        {/* Image Picker Button */}
         <TouchableOpacity 
           onPress={handlePickImage} 
           style={styles.iconButton}
           disabled={sending}
+          activeOpacity={0.7}
         >
-          <Ionicons 
-            name="add-circle" 
-            size={32} 
-            color={sending ? "#666" : "#667eea"} 
-          />
+          <LinearGradient
+            colors={sending ? ['#3C3C3E', '#3C3C3E'] : ['#667eea', '#764ba2']}
+            style={styles.iconButtonGradient}
+          >
+            <Ionicons 
+              name="add" 
+              size={24} 
+              color="#FFFFFF" 
+            />
+          </LinearGradient>
         </TouchableOpacity>
 
-        <View style={styles.inputContainer}>
+        {/* Message Input */}
+        <View style={styles.inputWrapper}>
           <TextInput
             style={styles.input}
             placeholder="Message..."
-            placeholderTextColor="#666"
+            placeholderTextColor="#8E8E93"
             value={message}
             onChangeText={setMessage}
             multiline={true}
@@ -84,20 +91,28 @@ export const ChatInput = ({ receiverId, onSendComplete }: ChatInputProps) => {
           />
         </View>
 
-        <TouchableOpacity 
-          onPress={handleSend}
-          disabled={!message.trim() || sending}
-          style={[
-            styles.sendButton,
-            (!message.trim() || sending) && styles.sendButtonDisabled
-          ]}
-        >
-          <Ionicons 
-            name="arrow-up" 
-            size={24} 
-            color="#FFFFFF" 
-          />
-        </TouchableOpacity>
+        {/* Send Button */}
+        {message.trim() ? (
+          <TouchableOpacity 
+            onPress={handleSend}
+            disabled={sending}
+            style={styles.sendButtonWrapper}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              style={styles.sendButton}
+            >
+              <Ionicons 
+                name="arrow-up" 
+                size={24} 
+                color="#FFFFFF" 
+              />
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.sendButtonPlaceholder} />
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -108,20 +123,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingTop: 8,
-    backgroundColor: '#1C1C1E',
+    paddingTop: 12,
+    backgroundColor: '#000000',
     borderTopWidth: 1,
-    borderTopColor: '#2C2C2E',
+    borderTopColor: '#1C1C1E',
+    gap: 8,
   },
   iconButton: {
-    padding: 4,
     marginBottom: 4,
   },
-  inputContainer: {
+  iconButtonGradient: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputWrapper: {
     flex: 1,
-    marginHorizontal: 8,
-    backgroundColor: '#2C2C2E',
+    backgroundColor: '#1C1C1E',
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
     paddingHorizontal: 16,
     paddingVertical: 10,
     maxHeight: 100,
@@ -130,17 +153,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     maxHeight: 80,
+    minHeight: 20,
+  },
+  sendButtonWrapper: {
+    marginBottom: 4,
   },
   sendButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#667eea',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    shadowColor: '#667eea',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  sendButtonDisabled: {
-    backgroundColor: '#444',
+  sendButtonPlaceholder: {
+    width: 36,
+    height: 36,
   },
 });
