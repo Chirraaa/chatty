@@ -1,4 +1,4 @@
-// app/_layout.tsx - Fixed infinite loop issue
+// app/_layout.tsx - With notification initialization
 import '../polyfills';
 import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -7,6 +7,7 @@ import { ApplicationProvider, IconRegistry } from '@ui-kitten/components';
 import { EvaIconsPack } from '@ui-kitten/eva-icons';
 import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
+import notificationService from '@/services/notification.service';
 import { IncomingCallListener } from '@/components/incoming-call';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
@@ -23,10 +24,16 @@ export default function RootLayout() {
       
       if (user) {
         try {
+          // Initialize encryption
           await authService.initializeEncryptionOnStartup(user.uid);
+          
+          // Initialize notifications
+          await notificationService.initialize();
+          
           setIsAuthenticated(true);
+          console.log('✅ User authenticated and services initialized');
         } catch (error) {
-          console.error('❌ Encryption initialization failed:', error);
+          console.error('❌ Service initialization failed:', error);
           setIsAuthenticated(false);
         }
       } else {

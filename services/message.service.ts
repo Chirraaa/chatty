@@ -1,8 +1,10 @@
-// services/message.service.ts - With edit and delete
+// services/message.service.ts - Enhanced with real-time updates and notifications
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import imageService from './image.service';
 import encryptionService from './encryption.service';
+import notificationService from './notification.service';
+import authService from './auth.service';
 
 export interface Message {
     id: string;
@@ -18,6 +20,7 @@ export interface Message {
     editedAt?: Date;
     deletedForEveryone?: boolean;
     deletedForMe?: boolean;
+    read?: boolean;
 }
 
 class MessageService {
@@ -45,7 +48,21 @@ class MessageService {
                     encryptedForSender,
                     encrypted: true,
                     timestamp: firestore.FieldValue.serverTimestamp(),
+                    read: false,
                 });
+
+            // Send notification
+            const senderProfile = await authService.getUserProfile(currentUser.uid);
+            await notificationService.sendNotification(
+                receiverId,
+                senderProfile?.username || 'New message',
+                text.length > 50 ? text.substring(0, 47) + '...' : text,
+                {
+                    type: 'message',
+                    senderId: currentUser.uid,
+                    messageId: docRef.id,
+                }
+            );
 
             return docRef.id;
         } catch (error) {
@@ -79,12 +96,75 @@ class MessageService {
                     encryptedImageForSender: encryptedForSender,
                     encrypted: true,
                     timestamp: firestore.FieldValue.serverTimestamp(),
+                    read: false,
                 });
+
+            // Send notification
+            const senderProfile = await authService.getUserProfile(currentUser.uid);
+            await notificationService.sendNotification(
+                receiverId,
+                senderProfile?.username || 'New message',
+                '📷 Photo',
+                {
+                    type: 'message',
+                    senderId: currentUser.uid,
+                    messageId: docRef.id,
+                }
+            );
 
             return docRef.id;
         } catch (error) {
             console.error('Error sending image:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Mark messages as read
+     */
+    async markMessagesAsRead(senderId: string): Promise<void> {
+        try {
+            const currentUser = auth().currentUser;
+            if (!currentUser) return;
+
+            const unreadMessages = await firestore()
+                .collection('messages')
+                .where('senderId', '==', senderId)
+                .where('receiverId', '==', currentUser.uid)
+                .where('read', '==', false)
+                .get();
+
+            const batch = firestore().batch();
+            unreadMessages.docs.forEach(doc => {
+                batch.update(doc.ref, { read: true });
+            });
+
+            await batch.commit();
+            console.log(`✅ Marked ${unreadMessages.size} messages as read`);
+        } catch (error) {
+            console.error('Error marking messages as read:', error);
+        }
+    }
+
+    /**
+     * Get unread message count for a user
+     */
+    async getUnreadCount(senderId: string): Promise<number> {
+        try {
+            const currentUser = auth().currentUser;
+            if (!currentUser) return 0;
+
+            const unreadMessages = await firestore()
+                .collection('messages')
+                .where('senderId', '==', senderId)
+                .where('receiverId', '==', currentUser.uid)
+                .where('read', '==', false)
+                .get();
+
+            return unreadMessages.size;
+        } catch (error) {
+            console.error('Error getting unread count:', error);
+            return 0;
         }
     }
 
@@ -96,7 +176,6 @@ class MessageService {
             const currentUser = auth().currentUser;
             if (!currentUser) throw new Error('Not authenticated');
 
-            // Get message to verify ownership
             const messageDoc = await firestore().collection('messages').doc(messageId).get();
             const messageData = messageDoc.data();
 
@@ -108,7 +187,6 @@ class MessageService {
                 throw new Error('Can only edit text messages');
             }
 
-            // Re-encrypt the new text
             const recipientPublicKey = await encryptionService.getRecipientPublicKey(messageData.receiverId);
             const myPublicKey = encryptionService.getPublicKey();
 
@@ -221,6 +299,7 @@ class MessageService {
             editedAt: data.editedAt?.toDate(),
             deletedForEveryone: data.deletedForEveryone || false,
             deletedForMe: data[`deletedFor_${currentUserId}`] || false,
+            read: data.read || false,
         };
 
         if (!data.encrypted) {
@@ -287,7 +366,7 @@ class MessageService {
     }
 
     /**
-     * Subscribe to messages
+     * Subscribe to messages with REAL-TIME updates
      */
     subscribeToMessages(
         otherUserId: string,
@@ -297,45 +376,66 @@ class MessageService {
             const currentUser = auth().currentUser;
             if (!currentUser) throw new Error('Not authenticated');
 
-            let allMessages: Message[] = [];
-            const processedMessageIds = new Set<string>();
+            console.log('📡 Setting up real-time message listeners...');
 
-            const processMessages = async (snapshot: any) => {
-                const newMessages = await Promise.all(
-                    snapshot.docs
-                        .filter((doc: any) => !processedMessageIds.has(doc.id))
-                        .map(async (doc: any) => {
-                            processedMessageIds.add(doc.id);
-                            return this.decryptMessage(doc.data(), doc.id, currentUser.uid);
-                        })
-                );
+            // Use a map to store messages by ID for efficient updates
+            const messagesMap = new Map<string, Message>();
 
-                const messageMap = new Map<string, Message>();
-                allMessages.forEach((msg: Message) => messageMap.set(msg.id, msg));
-                newMessages.forEach((msg: Message) => messageMap.set(msg.id, msg));
+            const processSnapshot = async (snapshot: any, isInitial: boolean = false) => {
+                for (const change of snapshot.docChanges()) {
+                    const messageId = change.doc.id;
+                    
+                    if (change.type === 'removed') {
+                        messagesMap.delete(messageId);
+                    } else {
+                        const decrypted = await this.decryptMessage(
+                            change.doc.data(),
+                            messageId,
+                            currentUser.uid
+                        );
+                        
+                        // Only include if not deleted
+                        if (!decrypted.deletedForMe && !decrypted.deletedForEveryone) {
+                            messagesMap.set(messageId, decrypted);
+                        } else {
+                            messagesMap.delete(messageId);
+                        }
+                    }
+                }
 
-                allMessages = Array.from(messageMap.values())
-                    .filter(msg => !msg.deletedForMe && !msg.deletedForEveryone)
+                // Convert to array and sort
+                const sortedMessages = Array.from(messagesMap.values())
                     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-                onUpdate(allMessages);
+                onUpdate(sortedMessages);
             };
 
-            const options = { includeMetadataChanges: false };
-
+            // Listen to sent messages
             const unsubscribe1 = firestore()
                 .collection('messages')
                 .where('senderId', '==', currentUser.uid)
                 .where('receiverId', '==', otherUserId)
-                .onSnapshot(options, snapshot => processMessages(snapshot));
+                .onSnapshot(
+                    { includeMetadataChanges: false },
+                    (snapshot) => processSnapshot(snapshot),
+                    (error) => console.error('❌ Sent messages listener error:', error)
+                );
 
+            // Listen to received messages
             const unsubscribe2 = firestore()
                 .collection('messages')
                 .where('senderId', '==', otherUserId)
                 .where('receiverId', '==', currentUser.uid)
-                .onSnapshot(options, snapshot => processMessages(snapshot));
+                .onSnapshot(
+                    { includeMetadataChanges: false },
+                    (snapshot) => processSnapshot(snapshot),
+                    (error) => console.error('❌ Received messages listener error:', error)
+                );
+
+            console.log('✅ Real-time listeners active');
 
             return () => {
+                console.log('🔌 Unsubscribing from message listeners');
                 unsubscribe1?.();
                 unsubscribe2?.();
             };

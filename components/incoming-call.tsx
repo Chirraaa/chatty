@@ -18,16 +18,22 @@ import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
 import callService from '@/services/call.service';
 
+// Firebase error type interface - ADDED
+interface FirebaseError extends Error {
+  code?: string;
+}
+
+// Helper function to check if error is a Firebase error - ADDED
+function isFirebaseError(error: any): error is FirebaseError {
+  return error && typeof error.code === 'string';
+}
+
 interface IncomingCall {
   callId: string;
   callerId: string;
   callerName: string;
   callerPicture?: string;
   isVideo: boolean;
-}
-
-interface FirebaseError extends Error {
-  code?: string;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -80,8 +86,9 @@ export function IncomingCallListener() {
             console.error('❌ Error processing incoming call:', error);
           }
         },
-        (error: FirebaseError) => {
-          if (error.code === 'permission-denied') {
+        (error) => {
+          // Use type guard for Firebase error - FIXED
+          if (isFirebaseError(error) && error.code === 'permission-denied') {
             return;
           }
           console.error('❌ Error in incoming call listener:', error);

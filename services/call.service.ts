@@ -1,4 +1,4 @@
-// services/call.service.ts - With better error handling and logging
+// services/call.service.ts - Enhanced with video enabling capability
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -21,6 +21,7 @@ class CallService {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private currentCallId: string | null = null;
 
   // WebRTC Configuration with STUN servers
   private configuration = {
@@ -66,6 +67,89 @@ class CallService {
   }
 
   /**
+   * Enable video during an audio call
+   */
+  async enableVideo(): Promise<void> {
+    try {
+      console.log('📹 Enabling video...');
+      
+      if (!this.peerConnection) {
+        throw new Error('No active call');
+      }
+
+      // Get video stream
+      const videoStream = await mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
+          facingMode: 'user',
+        },
+      });
+
+      const videoTrack = videoStream.getVideoTracks()[0];
+      
+      if (!videoTrack) {
+        throw new Error('Failed to get video track');
+      }
+
+      // Add video track to existing stream
+      if (this.localStream) {
+        this.localStream.addTrack(videoTrack);
+        
+        // Add track to peer connection
+        const sender = this.peerConnection.addTrack(videoTrack, this.localStream);
+        console.log('✅ Video track added to peer connection');
+        
+        // Renegotiate
+        await this.renegotiate();
+      }
+
+      console.log('✅ Video enabled successfully');
+    } catch (error: any) {
+      console.error('❌ Error enabling video:', error);
+      throw new Error('Failed to enable video. Please check camera permissions.');
+    }
+  }
+
+  /**
+   * Renegotiate connection (for adding/removing tracks)
+   */
+  private async renegotiate(): Promise<void> {
+    try {
+      if (!this.peerConnection || !this.currentCallId) {
+        throw new Error('No active connection to renegotiate');
+      }
+
+      console.log('🔄 Renegotiating connection...');
+
+      // Create new offer
+      const offer = await this.peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+
+      await this.peerConnection.setLocalDescription(offer);
+
+      // Update offer in Firestore
+      await firestore()
+        .collection('calls')
+        .doc(this.currentCallId)
+        .update({
+          offer: {
+            type: offer.type,
+            sdp: offer.sdp,
+          },
+        });
+
+      console.log('✅ Renegotiation complete');
+    } catch (error) {
+      console.error('❌ Error renegotiating:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Create a new call
    */
   async createCall(receiverId: string, isVideo: boolean): Promise<string> {
@@ -95,6 +179,7 @@ class CallService {
       });
 
       const callId = callRef.id;
+      this.currentCallId = callId;
       console.log('✅ Call document created:', callId);
 
       // Create peer connection
@@ -188,6 +273,8 @@ class CallService {
 
       if (!callData) throw new Error('Call not found');
 
+      this.currentCallId = callId;
+
       // Get local stream
       await this.initializeCall(callData.isVideo);
 
@@ -236,8 +323,9 @@ class CallService {
         status: 'connected',
       });
 
-      // Listen for remote ICE candidates
+      // Listen for remote ICE candidates and offer updates (for renegotiation)
       this.listenForRemoteCandidates(callId, 'callerCandidates');
+      this.listenForOfferUpdates(callId);
       console.log('✅ Call answered successfully');
     } catch (error) {
       console.error('Error answering call:', error);
@@ -267,6 +355,50 @@ class CallService {
           await this.peerConnection?.setRemoteDescription(answer);
           console.log('✅ Remote description set');
         }
+      });
+  }
+
+  /**
+   * Listen for offer updates (for answerer, during renegotiation)
+   */
+  private listenForOfferUpdates(callId: string) {
+    let lastOfferSdp: string | null = null;
+
+    firestore()
+      .collection('calls')
+      .doc(callId)
+      .onSnapshot(async (snapshot) => {
+        const data = snapshot.data();
+        if (!data || !data.offer) return;
+
+        // Check if offer has changed (renegotiation)
+        if (data.offer.sdp !== lastOfferSdp && lastOfferSdp !== null) {
+          console.log('🔄 Received updated offer (renegotiation)');
+          try {
+            const offer = new RTCSessionDescription(data.offer);
+            await this.peerConnection?.setRemoteDescription(offer);
+
+            // Create new answer
+            const answer = await this.peerConnection?.createAnswer();
+            if (answer) {
+              await this.peerConnection?.setLocalDescription(answer);
+
+              // Update answer in Firestore
+              await firestore().collection('calls').doc(callId).update({
+                answer: {
+                  type: answer.type,
+                  sdp: answer.sdp,
+                },
+              });
+
+              console.log('✅ Renegotiation answer sent');
+            }
+          } catch (error) {
+            console.error('❌ Error handling offer update:', error);
+          }
+        }
+
+        lastOfferSdp = data.offer.sdp;
       });
   }
 
@@ -309,8 +441,9 @@ class CallService {
       console.log('  - Peer connection closed');
 
       // Update call status in Firestore
-      if (callId) {
-        await firestore().collection('calls').doc(callId).update({
+      const targetCallId = callId || this.currentCallId;
+      if (targetCallId) {
+        await firestore().collection('calls').doc(targetCallId).update({
           status: 'ended',
           endedAt: firestore.FieldValue.serverTimestamp(),
         });
@@ -321,6 +454,7 @@ class CallService {
       this.localStream = null;
       this.remoteStream = null;
       this.peerConnection = null;
+      this.currentCallId = null;
       
       console.log('✅ Call ended successfully');
     } catch (error) {
