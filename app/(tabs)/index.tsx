@@ -1,5 +1,5 @@
-// app/(tabs)/index.tsx - Real-time updates with unread counts
-import { useState, useEffect } from 'react';
+// app/(tabs)/index.tsx - Real-time updates with proper unread counts
+import { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, FlatList, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,12 +11,12 @@ import authService from '@/services/auth.service';
 import messageService from '@/services/message.service';
 import notificationService from '@/services/notification.service';
 
-// Firebase error type interface - ADDED
+// Firebase error type interface
 interface FirebaseError extends Error {
   code?: string;
 }
 
-// Helper function to check if error is a Firebase error - ADDED
+// Helper function to check if error is a Firebase error
 function isFirebaseError(error: any): error is FirebaseError {
   return error && typeof error.code === 'string';
 }
@@ -26,7 +26,6 @@ interface ChatPreview {
   username: string;
   customNickname?: string;
   profilePicture?: string;
-  lastMessage?: string;
   lastMessageTime?: Date;
   unreadCount: number;
 }
@@ -35,6 +34,7 @@ export default function ChatsListScreen() {
   const [chats, setChats] = useState<ChatPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const insets = useSafeAreaInsets();
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     // Clear current chat when on chats list
@@ -89,7 +89,7 @@ export default function ChatsListScreen() {
         for (const userId of userIds) {
           const profile = await authService.getUserProfile(userId);
           const customNickname = await authService.getCustomNickname(userId);
-          const unreadCount = await messageService.getUnreadCount(userId);
+          const unreadCount = notificationService.getUnreadCount(userId); // Use notification service
           
           if (profile) {
             // Find last message with this user
@@ -123,11 +123,12 @@ export default function ChatsListScreen() {
         setLoading(false);
       };
 
-      // Real-time listener for sent messages - FIXED ERROR HANDLING
+      // Real-time listener for sent messages
       const unsubscribe1 = firestore()
         .collection('messages')
         .where('senderId', '==', currentUser.uid)
         .orderBy('timestamp', 'desc')
+        .limit(50)
         .onSnapshot(
           async (sentSnapshot) => {
             console.log('📬 Sent messages updated');
@@ -137,13 +138,13 @@ export default function ChatsListScreen() {
               .collection('messages')
               .where('receiverId', '==', currentUser.uid)
               .orderBy('timestamp', 'desc')
+              .limit(50)
               .get();
 
             const allMessages = [...sentSnapshot.docs, ...receivedSnapshot.docs];
             await processMessages(allMessages);
           },
           (error) => {
-            // Use type guard for Firebase error - FIXED
             if (isFirebaseError(error) && error.code !== 'permission-denied') {
               console.error('❌ Error in sent messages listener:', error);
             }
@@ -151,11 +152,12 @@ export default function ChatsListScreen() {
           }
         );
 
-      // Real-time listener for received messages - FIXED ERROR HANDLING
+      // Real-time listener for received messages
       const unsubscribe2 = firestore()
         .collection('messages')
         .where('receiverId', '==', currentUser.uid)
         .orderBy('timestamp', 'desc')
+        .limit(50)
         .onSnapshot(
           async (receivedSnapshot) => {
             console.log('📬 Received messages updated');
@@ -165,13 +167,13 @@ export default function ChatsListScreen() {
               .collection('messages')
               .where('senderId', '==', currentUser.uid)
               .orderBy('timestamp', 'desc')
+              .limit(50)
               .get();
 
             const allMessages = [...sentSnapshot.docs, ...receivedSnapshot.docs];
             await processMessages(allMessages);
           },
           (error) => {
-            // Use type guard for Firebase error - FIXED
             if (isFirebaseError(error) && error.code !== 'permission-denied') {
               console.error('❌ Error in received messages listener:', error);
             }
@@ -179,16 +181,23 @@ export default function ChatsListScreen() {
           }
         );
 
+      // Listen for unread count changes
+      const unsubscribe3 = notificationService.getAllUnreadCounts();
+      
       console.log('✅ Chat list listeners active');
 
-      return () => {
+      // Return combined unsubscribe function
+      unsubscribeRef.current = () => {
         console.log('🔌 Unsubscribing from chat list listeners');
-        unsubscribe1?.();
-        unsubscribe2?.();
+        unsubscribe1();
+        unsubscribe2();
       };
+
+      return unsubscribeRef.current;
     } catch (error) {
       console.error('Error loading chats:', error);
       setLoading(false);
+      return () => {};
     }
   };
 

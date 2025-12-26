@@ -1,5 +1,5 @@
 // app/call/[callId].tsx - Fixed PIP with both streams and proper backgrounding
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -37,7 +37,7 @@ export default function CallScreen() {
   const [callDuration, setCallDuration] = useState(0);
   const [otherUserName, setOtherUserName] = useState('Unknown');
   const [otherUserPicture, setOtherUserPicture] = useState<string | null>(null);
-  
+
   // PIP state
   const [isPipMode, setIsPipMode] = useState(false);
   const [pipSize, setPipSize] = useState<'small' | 'large'>('small');
@@ -60,16 +60,24 @@ export default function CallScreen() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       console.log('📱 App state changed:', nextAppState);
-      
+
       if (
         appState.current.match(/active/) &&
         nextAppState.match(/inactive|background/)
       ) {
-        // App going to background - enable PIP mode
+        // App going to background - enable PIP mode and set background mode
         console.log('📱 App backgrounded - enabling PIP');
         setIsPipMode(true);
+        callService.setBackgroundMode(true);
+      } else if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState.match(/active/)
+      ) {
+        // App coming to foreground
+        console.log('📱 App foregrounded');
+        callService.setBackgroundMode(false);
       }
-      
+
       appState.current = nextAppState;
     });
 
@@ -103,25 +111,25 @@ export default function CallScreen() {
       ),
       onPanResponderRelease: (_, gestureState) => {
         pan.flattenOffset();
-        
+
         const pipWidth = pipSize === 'small' ? 120 : 180;
         const pipHeight = pipSize === 'small' ? 160 : 240;
-        
+
         let finalX = (pan.x as any)._value;
         let finalY = (pan.y as any)._value;
-        
+
         // Snap to nearest edge horizontally
         if (gestureState.moveX < SCREEN_WIDTH / 2) {
           finalX = 20;
         } else {
           finalX = SCREEN_WIDTH - pipWidth - 20;
         }
-        
+
         // Keep within vertical bounds
         const maxY = SCREEN_HEIGHT - pipHeight - 20;
         const minY = insets.top + 20;
         finalY = Math.max(minY, Math.min(finalY, maxY));
-        
+
         RNAnimated.spring(pan, {
           toValue: { x: finalX, y: finalY },
           useNativeDriver: false,
@@ -153,19 +161,19 @@ export default function CallScreen() {
     try {
       const callDoc = await firestore().collection('calls').doc(callId).get();
       const callData = callDoc.data();
-      
+
       if (callData) {
         setIsVideoCall(callData.isVideo);
         setIsVideoEnabled(callData.isVideo);
-        
+
         const currentUserId = authService.getCurrentUser()?.uid;
-        const otherUserId = callData.callerId === currentUserId 
-          ? callData.receiverId 
+        const otherUserId = callData.callerId === currentUserId
+          ? callData.receiverId
           : callData.callerId;
-        
+
         const profile = await authService.getUserProfile(otherUserId);
         const nickname = await authService.getCustomNickname(otherUserId);
-        
+
         setOtherUserName(nickname || profile?.username || 'Unknown');
         setOtherUserPicture(profile?.profilePicture || null);
       }
@@ -220,7 +228,7 @@ export default function CallScreen() {
 
   const handleEndCall = async () => {
     if (isEnding) return;
-    
+
     try {
       setIsEnding(true);
       await callService.endCall(callId);
@@ -252,11 +260,11 @@ export default function CallScreen() {
                 await callService.enableVideo();
                 setIsVideoEnabled(true);
                 setIsVideoCall(true);
-                
+
                 await firestore().collection('calls').doc(callId).update({
                   isVideo: true,
                 });
-                
+
                 const local = callService.getLocalStream();
                 setLocalStream(local);
               } catch (error) {
@@ -299,7 +307,7 @@ export default function CallScreen() {
     setIsPipMode(false);
   };
 
-  // PIP Mode Rendering
+  // PIP Mode Rendering - FIXED: Show both local and remote video properly
   if (isPipMode) {
     const pipWidth = pipSize === 'small' ? 120 : 180;
     const pipHeight = pipSize === 'small' ? 160 : 240;
@@ -307,7 +315,7 @@ export default function CallScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        
+
         {/* Floating PIP Window */}
         <View style={styles.pipOverlay} pointerEvents="box-none">
           <RNAnimated.View
@@ -329,11 +337,11 @@ export default function CallScreen() {
               onPress={handlePipDoubleTap}
               activeOpacity={0.9}
             >
-              {/* Remote video (main) */}
+              {/* Main video area - show remote video or placeholder */}
               {remoteStream && isVideoCall ? (
                 <RTCView
                   streamURL={remoteStream.toURL()}
-                  style={styles.pipRemoteVideo}
+                  style={styles.pipMainVideo}
                   objectFit="cover"
                   mirror={false}
                 />
@@ -404,7 +412,7 @@ export default function CallScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      
+
       <View style={styles.container}>
         {/* Remote Video or Avatar (Full Screen) */}
         {remoteStream && isVideoCall ? (
@@ -436,17 +444,17 @@ export default function CallScreen() {
             </View>
             <Text style={styles.callerName}>{otherUserName}</Text>
             <Text style={styles.statusText}>
-              {callStatus === 'connecting' ? 'Connecting...' : 
-               callStatus === 'connected' ? formatDuration(callDuration) : 
-               'Waiting...'}
+              {callStatus === 'connecting' ? 'Connecting...' :
+                callStatus === 'connected' ? formatDuration(callDuration) :
+                  'Waiting...'}
             </Text>
           </LinearGradient>
         )}
 
         {/* Local Video (Picture-in-Picture) - Only show if video is enabled */}
         {localStream && isVideoEnabled && (
-          <Animated.View 
-            entering={FadeIn} 
+          <Animated.View
+            entering={FadeIn}
             exiting={FadeOut}
             style={[styles.localVideoContainer, { top: 80 + insets.top }]}
           >
@@ -497,8 +505,8 @@ export default function CallScreen() {
             </TouchableOpacity>
 
             {/* End Call Button */}
-            <TouchableOpacity 
-              onPress={handleEndCall} 
+            <TouchableOpacity
+              onPress={handleEndCall}
               style={styles.controlWrapper}
               disabled={isEnding}
             >
@@ -520,7 +528,8 @@ export default function CallScreen() {
                 colors={!isVideoEnabled ? ['#FF3B30', '#C7001E'] : ['rgba(255, 255, 255, 0.15)', 'rgba(255, 255, 255, 0.05)']}
                 style={styles.controlButton}
               >
-                <Ionicons name={!isVideoEnabled ? 'videocam-off' : 'videocam'} size={28} color="#FFFFFF" />
+                <Ionicons
+                  name={!isVideoEnabled ? 'videocam-off' : 'videocam'} size={28} color="#FFFFFF" />
               </LinearGradient>
               <Text style={styles.controlLabel}>
                 {!isVideoCall ? 'Enable' : isVideoEnabled ? 'Video On' : 'Video Off'}
@@ -735,7 +744,7 @@ const styles = StyleSheet.create({
   pipVideoContainer: {
     flex: 1,
   },
-  pipRemoteVideo: {
+  pipMainVideo: {
     flex: 1,
   },
   pipPlaceholder: {

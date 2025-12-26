@@ -1,5 +1,5 @@
-// app/(tabs)/contacts.tsx - Clean minimalistic contacts
-import { useState } from 'react';
+// app/(tabs)/contacts.tsx - Clean minimalistic contacts with real-time integration
+import { useState, useEffect } from 'react';
 import { StyleSheet, FlatList, View, TouchableOpacity, Image, TextInput } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

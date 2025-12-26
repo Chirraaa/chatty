@@ -1,12 +1,12 @@
 // services/notification.service.ts - Push notifications and badge management
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Configure notification handler - FIXED
+// Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -21,6 +21,8 @@ class NotificationService {
   private expoPushToken: string | null = null;
   private currentChatUserId: string | null = null;
   private unreadCounts: Map<string, number> = new Map();
+  private appStateListener: any = null;
+  private isAppInForeground: boolean = true;
 
   /**
    * Initialize notifications
@@ -33,6 +35,9 @@ class NotificationService {
       // Load unread counts
       await this.loadUnreadCounts();
       
+      // Setup app state listener
+      this.setupAppStateListener();
+      
       // Listen for foreground notifications
       this.setupForegroundListener();
       
@@ -40,6 +45,16 @@ class NotificationService {
     } catch (error) {
       console.error('❌ Error initializing notifications:', error);
     }
+  }
+
+  /**
+   * Setup app state listener to track foreground/background state
+   */
+  private setupAppStateListener(): void {
+    this.appStateListener = AppState.addEventListener('change', (nextAppState) => {
+      this.isAppInForeground = nextAppState === 'active';
+      console.log('📱 App state changed:', nextAppState, 'Foreground:', this.isAppInForeground);
+    });
   }
 
   /**
@@ -123,9 +138,19 @@ class NotificationService {
     data?: any
   ): Promise<void> {
     try {
-      // Don't send if recipient is in the current chat
-      if (recipientId === this.currentChatUserId) {
-        console.log('🔕 Not sending notification - user is in the chat');
+      // Don't send if recipient is in the current chat and app is in foreground
+      if (recipientId === this.currentChatUserId && this.isAppInForeground) {
+        console.log('🔕 Not sending notification - user is in the chat and app is active');
+        return;
+      }
+
+      // Don't send if app is in foreground (we'll show in-app indicators instead)
+      if (this.isAppInForeground) {
+        console.log('🔕 Not sending push notification - app is in foreground');
+        // Still increment unread count for badge
+        if (data.type === 'message' && data.senderId) {
+          this.incrementUnreadCount(data.senderId as string);
+        }
         return;
       }
 
@@ -143,7 +168,7 @@ class NotificationService {
       }
 
       // Send push notification via Expo's API
-      await fetch('https://exp.host/--/api/v2/push/send', {
+      const response = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -154,11 +179,15 @@ class NotificationService {
           body,
           data,
           sound: 'default',
-          badge: 1,
+          badge: this.getTotalUnreadCount(),
         }),
       });
 
-      console.log('✅ Notification sent to:', recipientId);
+      if (response.ok) {
+        console.log('✅ Notification sent to:', recipientId);
+      } else {
+        console.error('❌ Failed to send notification:', await response.text());
+      }
     } catch (error) {
       console.error('❌ Error sending notification:', error);
     }
@@ -169,6 +198,7 @@ class NotificationService {
    */
   setCurrentChat(userId: string | null): void {
     this.currentChatUserId = userId;
+    console.log('👁️ Current chat set to:', userId);
     
     // Clear unread count for this chat
     if (userId) {
@@ -188,6 +218,7 @@ class NotificationService {
       if (stored) {
         const counts = JSON.parse(stored);
         this.unreadCounts = new Map(Object.entries(counts));
+        console.log('📊 Loaded unread counts:', Object.fromEntries(this.unreadCounts));
       }
     } catch (error) {
       console.error('Error loading unread counts:', error);
@@ -207,6 +238,7 @@ class NotificationService {
         `unread_counts_${currentUser.uid}`,
         JSON.stringify(counts)
       );
+      console.log('💾 Saved unread counts:', counts);
     } catch (error) {
       console.error('Error saving unread counts:', error);
     }
@@ -220,15 +252,20 @@ class NotificationService {
     this.unreadCounts.set(userId, current + 1);
     this.saveUnreadCounts();
     this.updateAppBadge();
+    console.log(`📈 Incremented unread count for ${userId}: ${current + 1}`);
   }
 
   /**
    * Clear unread count for a user
    */
   clearUnreadCount(userId: string): void {
+    const wasPresent = this.unreadCounts.has(userId);
     this.unreadCounts.delete(userId);
     this.saveUnreadCounts();
     this.updateAppBadge();
+    if (wasPresent) {
+      console.log(`🗑️ Cleared unread count for ${userId}`);
+    }
   }
 
   /**
@@ -246,12 +283,20 @@ class NotificationService {
   }
 
   /**
+   * Get total unread count across all chats
+   */
+  getTotalUnreadCount(): number {
+    return Array.from(this.unreadCounts.values()).reduce((sum, count) => sum + count, 0);
+  }
+
+  /**
    * Update app badge with total unread count
    */
   private async updateAppBadge(): Promise<void> {
     try {
-      const total = Array.from(this.unreadCounts.values()).reduce((sum, count) => sum + count, 0);
+      const total = this.getTotalUnreadCount();
       await Notifications.setBadgeCountAsync(total);
+      console.log('🏷️ Updated app badge:', total);
     } catch (error) {
       console.error('Error updating badge:', error);
     }
@@ -264,8 +309,18 @@ class NotificationService {
     try {
       await Notifications.dismissAllNotificationsAsync();
       await Notifications.setBadgeCountAsync(0);
+      console.log('🧹 Cleared all notifications');
     } catch (error) {
       console.error('Error clearing notifications:', error);
+    }
+  }
+
+  /**
+   * Cleanup service
+   */
+  cleanup(): void {
+    if (this.appStateListener) {
+      this.appStateListener.remove();
     }
   }
 }

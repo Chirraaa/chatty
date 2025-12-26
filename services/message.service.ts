@@ -141,6 +141,9 @@ class MessageService {
 
             await batch.commit();
             console.log(`✅ Marked ${unreadMessages.size} messages as read`);
+            
+            // Clear unread count in notification service
+            notificationService.clearUnreadCount(senderId);
         } catch (error) {
             console.error('Error marking messages as read:', error);
         }

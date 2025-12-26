@@ -1,4 +1,4 @@
-// services/call.service.ts - Enhanced with video enabling capability
+// services/call.service.ts - Enhanced with background call support
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -22,6 +22,7 @@ class CallService {
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
   private currentCallId: string | null = null;
+  private backgroundMode: boolean = false;
 
   // WebRTC Configuration with STUN servers
   private configuration = {
@@ -176,6 +177,7 @@ class CallService {
         status: 'calling',
         isVideo,
         createdAt: firestore.FieldValue.serverTimestamp(),
+        backgroundMode: false, // Track if call was backgrounded
       });
 
       const callId = callRef.id;
@@ -423,6 +425,20 @@ class CallService {
   }
 
   /**
+   * Set background mode for call
+   */
+  setBackgroundMode(enabled: boolean): void {
+    this.backgroundMode = enabled;
+    if (this.currentCallId) {
+      firestore()
+        .collection('calls')
+        .doc(this.currentCallId)
+        .update({ backgroundMode: enabled })
+        .catch(console.error);
+    }
+  }
+
+  /**
    * End the call
    */
   async endCall(callId?: string) {
@@ -446,6 +462,7 @@ class CallService {
         await firestore().collection('calls').doc(targetCallId).update({
           status: 'ended',
           endedAt: firestore.FieldValue.serverTimestamp(),
+          backgroundMode: this.backgroundMode,
         });
         console.log('  - Call status updated in Firestore');
       }
@@ -455,6 +472,7 @@ class CallService {
       this.remoteStream = null;
       this.peerConnection = null;
       this.currentCallId = null;
+      this.backgroundMode = false;
       
       console.log('✅ Call ended successfully');
     } catch (error) {
@@ -516,6 +534,20 @@ class CallService {
 
   getRemoteStream(): MediaStream | null {
     return this.remoteStream;
+  }
+
+  /**
+   * Get current call ID
+   */
+  getCurrentCallId(): string | null {
+    return this.currentCallId;
+  }
+
+  /**
+   * Check if call is active
+   */
+  isCallActive(): boolean {
+    return this.currentCallId !== null && this.peerConnection !== null;
   }
 }
 
