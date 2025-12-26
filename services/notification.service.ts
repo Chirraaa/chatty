@@ -1,10 +1,11 @@
-// services/notification.service.ts - Push notifications and badge management
+// services/notification.service.ts - Enhanced with call notification handling
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, AppState } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import callService from './call.service';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -23,6 +24,7 @@ class NotificationService {
   private unreadCounts: Map<string, number> = new Map();
   private appStateListener: any = null;
   private isAppInForeground: boolean = true;
+  private callNotificationListener: any = null;
 
   /**
    * Initialize notifications
@@ -41,6 +43,9 @@ class NotificationService {
       // Listen for foreground notifications
       this.setupForegroundListener();
       
+      // Setup call notification handling
+      this.setupCallNotificationHandling();
+      
       console.log('✅ Notification service initialized');
     } catch (error) {
       console.error('❌ Error initializing notifications:', error);
@@ -54,7 +59,40 @@ class NotificationService {
     this.appStateListener = AppState.addEventListener('change', (nextAppState) => {
       this.isAppInForeground = nextAppState === 'active';
       console.log('📱 App state changed:', nextAppState, 'Foreground:', this.isAppInForeground);
+      
+      // Handle call notifications when returning from background
+      if (nextAppState === 'active') {
+        this.handleAppForeground();
+      }
     });
+  }
+
+  /**
+   * Handle app foreground events
+   */
+  private handleAppForeground(): void {
+    // Clear call-related notifications when app comes to foreground
+    this.clearCallNotifications();
+  }
+
+  /**
+   * Setup call notification handling
+   */
+  private setupCallNotificationHandling(): void {
+    // Handle notification responses (tapping on notifications)
+    this.callNotificationListener = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log('📞 Notification response received:', response);
+        
+        const data = response.notification.request.content.data;
+        
+        // Handle call notifications
+        if (data.type === 'call' && data.callId) {
+          console.log('📞 Handling call notification for call:', data.callId);
+          // The app will handle navigation to the call screen
+        }
+      }
+    );
   }
 
   /**
@@ -101,9 +139,17 @@ class NotificationService {
 
       // Configure Android channel
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
+        await Notifications.setNotificationChannelAsync('calls', {
+          name: 'Calls',
           importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF3B30',
+          sound: 'call_ringtone',
+        });
+
+        await Notifications.setNotificationChannelAsync('messages', {
+          name: 'Messages',
+          importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#667eea',
         });
@@ -120,10 +166,17 @@ class NotificationService {
     Notifications.addNotificationReceivedListener((notification) => {
       console.log('📬 Notification received in foreground:', notification);
       
-      // Update badge count
       const data = notification.request.content.data;
+      
+      // Handle different notification types
       if (data.type === 'message' && data.senderId) {
         this.incrementUnreadCount(data.senderId as string);
+      } else if (data.type === 'call') {
+        // Don't show call notifications if already in a call
+        if (callService.isCallActive()) {
+          console.log('🔕 Not showing call notification - already in a call');
+          return;
+        }
       }
     });
   }
@@ -145,7 +198,7 @@ class NotificationService {
       }
 
       // Don't send if app is in foreground (we'll show in-app indicators instead)
-      if (this.isAppInForeground) {
+      if (this.isAppInForeground && data.type !== 'call') {
         console.log('🔕 Not sending push notification - app is in foreground');
         // Still increment unread count for badge
         if (data.type === 'message' && data.senderId) {
@@ -167,20 +220,28 @@ class NotificationService {
         return;
       }
 
+      // Configure notification based on type
+      const notificationConfig: any = {
+        to: pushToken,
+        title,
+        body,
+        data,
+        sound: data.type === 'call' ? 'call_ringtone' : 'default',
+        badge: this.getTotalUnreadCount(),
+      };
+
+      // Set Android channel for calls
+      if (Platform.OS === 'android' && data.type === 'call') {
+        notificationConfig.channelId = 'calls';
+      }
+
       // Send push notification via Expo's API
       const response = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          to: pushToken,
-          title,
-          body,
-          data,
-          sound: 'default',
-          badge: this.getTotalUnreadCount(),
-        }),
+        body: JSON.stringify(notificationConfig),
       });
 
       if (response.ok) {
@@ -190,6 +251,30 @@ class NotificationService {
       }
     } catch (error) {
       console.error('❌ Error sending notification:', error);
+    }
+  }
+
+  /**
+   * Send call notification
+   */
+  async sendCallNotification(
+    recipientId: string,
+    callerName: string,
+    callId: string,
+    isVideo: boolean
+  ): Promise<void> {
+    try {
+      const title = isVideo ? '📹 Incoming Video Call' : '📞 Incoming Call';
+      const body = `From ${callerName}`;
+      
+      await this.sendNotification(recipientId, title, body, {
+        type: 'call',
+        callId,
+        isVideo,
+        callerName,
+      });
+    } catch (error) {
+      console.error('❌ Error sending call notification:', error);
     }
   }
 
@@ -316,11 +401,36 @@ class NotificationService {
   }
 
   /**
+   * Clear call-related notifications
+   */
+  async clearCallNotifications(): Promise<void> {
+    try {
+      // Get all notifications
+      const notifications = await Notifications.getPresentedNotificationsAsync();
+      
+      // Filter and dismiss call notifications
+      const callNotifications = notifications.filter(notification => 
+        notification.request.content.data.type === 'call'
+      );
+      
+      if (callNotifications.length > 0) {
+        await Notifications.dismissNotificationAsync(callNotifications[0].request.identifier);
+        console.log('🧹 Cleared call notifications');
+      }
+    } catch (error) {
+      console.error('Error clearing call notifications:', error);
+    }
+  }
+
+  /**
    * Cleanup service
    */
   cleanup(): void {
     if (this.appStateListener) {
       this.appStateListener.remove();
+    }
+    if (this.callNotificationListener) {
+      this.callNotificationListener.remove();
     }
   }
 }

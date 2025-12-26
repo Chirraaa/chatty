@@ -21,8 +21,9 @@ import messageService, { Message } from '@/services/message.service';
 import authService from '@/services/auth.service';
 import notificationService from '@/services/notification.service';
 import chatSettingsService from '@/services/chat-settings.service';
-import MessageBubble from '@/components/message-bubble';
-import ChatInput from '@/components/chat-input';
+import {MessageBubble} from '@/components/message-bubble';
+import { ChatInput } from '@/components/chat-input';
+import callService from '@/services/call.service';
 
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -336,10 +337,15 @@ export default function ChatScreen() {
 
         {renderTypingIndicator()}
 
+        {/* Fixed ChatInput with receiverId prop */}
         <ChatInput
-          onSendMessage={handleSendMessage}
-          onSendImage={handleSendImage}
-          disabled={sending}
+          receiverId={userId}
+          onSendComplete={() => {
+            // Scroll to bottom after sending
+            if (flatListRef.current) {
+              flatListRef.current.scrollToEnd({ animated: true });
+            }
+          }}
         />
       </KeyboardAvoidingView>
     </View>

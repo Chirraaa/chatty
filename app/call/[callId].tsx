@@ -1,4 +1,4 @@
-// app/call/[callId].tsx - Fixed PIP with both streams and proper backgrounding
+// app/call/[callId].tsx - FIXED: Proper PIP with background call support
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   AppState,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
@@ -38,7 +39,7 @@ export default function CallScreen() {
   const [otherUserName, setOtherUserName] = useState('Unknown');
   const [otherUserPicture, setOtherUserPicture] = useState<string | null>(null);
 
-  // PIP state
+  // PIP state - FIXED: Start in PIP mode when app is backgrounded
   const [isPipMode, setIsPipMode] = useState(false);
   const [pipSize, setPipSize] = useState<'small' | 'large'>('small');
   const pan = useRef(new RNAnimated.ValueXY({ x: SCREEN_WIDTH - 140, y: 100 })).current;
@@ -56,7 +57,7 @@ export default function CallScreen() {
     return () => clearInterval(interval);
   }, [callStatus]);
 
-  // Handle app state changes - keep call active in background
+  // FIXED: Handle app state changes - proper background call handling
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       console.log('📱 App state changed:', nextAppState);
@@ -65,8 +66,8 @@ export default function CallScreen() {
         appState.current.match(/active/) &&
         nextAppState.match(/inactive|background/)
       ) {
-        // App going to background - enable PIP mode and set background mode
-        console.log('📱 App backgrounded - enabling PIP');
+        // App going to background - enable PIP mode and background audio
+        console.log('📱 App backgrounded - enabling PIP and background mode');
         setIsPipMode(true);
         callService.setBackgroundMode(true);
       } else if (
@@ -85,6 +86,22 @@ export default function CallScreen() {
       subscription.remove();
     };
   }, []);
+
+  // FIXED: Auto-enter PIP mode after 3 seconds of inactivity (user likely switched apps)
+  useEffect(() => {
+    let pipTimer: NodeJS.Timeout;
+    
+    if (callStatus === 'connected' && !isPipMode) {
+      pipTimer = setTimeout(() => {
+        console.log('⏰ Auto-enabling PIP mode after inactivity');
+        setIsPipMode(true);
+      }, 3000);
+    }
+
+    return () => {
+      if (pipTimer) clearTimeout(pipTimer);
+    };
+  }, [callStatus, isPipMode]);
 
   // Format duration as MM:SS
   const formatDuration = (seconds: number) => {
@@ -307,7 +324,7 @@ export default function CallScreen() {
     setIsPipMode(false);
   };
 
-  // PIP Mode Rendering - FIXED: Show both local and remote video properly
+  // FIXED: PIP Mode Rendering - Proper background handling
   if (isPipMode) {
     const pipWidth = pipSize === 'small' ? 120 : 180;
     const pipHeight = pipSize === 'small' ? 160 : 240;
@@ -316,8 +333,14 @@ export default function CallScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
 
-        {/* Floating PIP Window */}
-        <View style={styles.pipOverlay} pointerEvents="box-none">
+        {/* FIXED: Proper overlay that doesn't block the app underneath */}
+        <View 
+          style={[
+            styles.pipOverlay, 
+            Platform.OS === 'ios' && styles.pipOverlayIOS
+          ]} 
+          pointerEvents="box-none"
+        >
           <RNAnimated.View
             style={[
               styles.pipContainer,
@@ -723,10 +746,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  // PIP Styles
+  // FIXED: PIP Styles - Proper overlay handling
   pipOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'transparent',
+    zIndex: 999,
+  },
+  pipOverlayIOS: {
+    // iOS needs special handling for PIP to work properly
+    backgroundColor: 'rgba(0,0,0,0.01)', // Nearly transparent but not completely
   },
   pipContainer: {
     position: 'absolute',

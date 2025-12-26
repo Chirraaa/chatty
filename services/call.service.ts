@@ -1,4 +1,4 @@
-// services/call.service.ts - Enhanced with background call support
+// services/call.service.ts - Enhanced with proper background call support and stream management
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -8,6 +8,7 @@ import {
 } from 'react-native-webrtc';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
+import { Platform } from 'react-native';
 
 interface CallData {
   callId: string;
@@ -15,6 +16,7 @@ interface CallData {
   receiverId: string;
   status: 'calling' | 'connected' | 'ended';
   isVideo: boolean;
+  backgroundMode?: boolean;
 }
 
 class CallService {
@@ -23,6 +25,8 @@ class CallService {
   private remoteStream: MediaStream | null = null;
   private currentCallId: string | null = null;
   private backgroundMode: boolean = false;
+  private videoTrackAdded: boolean = false;
+  private audioSessionActive: boolean = false;
 
   // WebRTC Configuration with STUN servers
   private configuration = {
@@ -34,14 +38,21 @@ class CallService {
   };
 
   /**
-   * Initialize local media stream
+   * Initialize local media stream with enhanced error handling
    */
   async initializeCall(isVideo: boolean): Promise<MediaStream> {
     try {
       console.log('🎥 Requesting media permissions:', isVideo ? 'video + audio' : 'audio only');
       
+      // Stop any existing tracks first
+      this.cleanupMedia();
+      
       this.localStream = await mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         video: isVideo
           ? {
               width: { ideal: 1280 },
@@ -58,6 +69,9 @@ class CallService {
         console.log('  - Video tracks:', this.localStream.getVideoTracks().length);
       }
 
+      // Mark audio session as active for background handling
+      this.audioSessionActive = true;
+      
       return this.localStream;
     } catch (error: any) {
       console.error('❌ Error getting user media:', error);
@@ -74,8 +88,17 @@ class CallService {
     try {
       console.log('📹 Enabling video...');
       
-      if (!this.peerConnection) {
+      if (!this.peerConnection || !this.localStream) {
         throw new Error('No active call');
+      }
+
+      // Check if video track already exists
+      const existingVideoTrack = this.localStream.getVideoTracks()[0];
+      if (existingVideoTrack) {
+        console.log('📹 Video track already exists, enabling it');
+        existingVideoTrack.enabled = true;
+        this.videoTrackAdded = true;
+        return;
       }
 
       // Get video stream
@@ -95,16 +118,16 @@ class CallService {
       }
 
       // Add video track to existing stream
-      if (this.localStream) {
-        this.localStream.addTrack(videoTrack);
-        
-        // Add track to peer connection
-        const sender = this.peerConnection.addTrack(videoTrack, this.localStream);
-        console.log('✅ Video track added to peer connection');
-        
-        // Renegotiate
-        await this.renegotiate();
-      }
+      this.localStream.addTrack(videoTrack);
+      
+      // Add track to peer connection
+      const sender = this.peerConnection.addTrack(videoTrack, this.localStream);
+      console.log('✅ Video track added to peer connection');
+      
+      this.videoTrackAdded = true;
+      
+      // Renegotiate
+      await this.renegotiate();
 
       console.log('✅ Video enabled successfully');
     } catch (error: any) {
@@ -141,6 +164,7 @@ class CallService {
             type: offer.type,
             sdp: offer.sdp,
           },
+          updatedAt: firestore.FieldValue.serverTimestamp(),
         });
 
       console.log('✅ Renegotiation complete');
@@ -151,7 +175,7 @@ class CallService {
   }
 
   /**
-   * Create a new call
+   * Create a new call with enhanced error handling
    */
   async createCall(receiverId: string, isVideo: boolean): Promise<string> {
     try {
@@ -178,6 +202,7 @@ class CallService {
         isVideo,
         createdAt: firestore.FieldValue.serverTimestamp(),
         backgroundMode: false, // Track if call was backgrounded
+        platform: Platform.OS, // Track platform for compatibility
       });
 
       const callId = callRef.id;
@@ -221,6 +246,20 @@ class CallService {
           } catch (error) {
             console.error('❌ Failed to save ICE candidate:', error);
           }
+        }
+      };
+
+      // Handle connection state changes
+      (this.peerConnection as any).onconnectionstatechange = () => {
+        const state = (this.peerConnection as any).connectionState;
+        console.log('🔗 Connection state changed:', state);
+        
+        if (state === 'connected') {
+          console.log('🎉 Peer connection established');
+          firestore().collection('calls').doc(callId).update({
+            status: 'connected',
+            connectedAt: firestore.FieldValue.serverTimestamp(),
+          }).catch(console.error);
         }
       };
 
@@ -308,6 +347,20 @@ class CallService {
         }
       };
 
+      // Handle connection state changes
+      (this.peerConnection as any).onconnectionstatechange = () => {
+        const state = (this.peerConnection as any).connectionState;
+        console.log('🔗 Connection state changed:', state);
+        
+        if (state === 'connected') {
+          console.log('🎉 Peer connection established');
+          firestore().collection('calls').doc(callId).update({
+            status: 'connected',
+            connectedAt: firestore.FieldValue.serverTimestamp(),
+          }).catch(console.error);
+        }
+      };
+
       // Set remote description (offer)
       const offer = new RTCSessionDescription(callData.offer);
       await this.peerConnection.setRemoteDescription(offer);
@@ -323,6 +376,7 @@ class CallService {
           sdp: answer.sdp,
         },
         status: 'connected',
+        answeredAt: firestore.FieldValue.serverTimestamp(),
       });
 
       // Listen for remote ICE candidates and offer updates (for renegotiation)
@@ -391,6 +445,7 @@ class CallService {
                   type: answer.type,
                   sdp: answer.sdp,
                 },
+                updatedAt: firestore.FieldValue.serverTimestamp(),
               });
 
               console.log('✅ Renegotiation answer sent');
@@ -425,36 +480,71 @@ class CallService {
   }
 
   /**
-   * Set background mode for call
+   * Set background mode for call - FIXED: Proper background handling
    */
   setBackgroundMode(enabled: boolean): void {
     this.backgroundMode = enabled;
+    console.log('📱 Background mode:', enabled ? 'ENABLED' : 'DISABLED');
+    
     if (this.currentCallId) {
       firestore()
         .collection('calls')
         .doc(this.currentCallId)
-        .update({ backgroundMode: enabled })
+        .update({ 
+          backgroundMode: enabled,
+          lastBackgroundedAt: enabled ? firestore.FieldValue.serverTimestamp() : null,
+        })
         .catch(console.error);
+    }
+
+    // Handle audio track when backgrounding
+    if (this.localStream) {
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        // Keep audio active in background
+        audioTrack.enabled = true;
+        console.log('🎤 Audio track kept active for background call');
+      }
     }
   }
 
   /**
-   * End the call
+   * Cleanup media tracks
+   */
+  private cleanupMedia(): void {
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      this.localStream = null;
+    }
+    
+    if (this.remoteStream) {
+      this.remoteStream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      this.remoteStream = null;
+    }
+    
+    this.audioSessionActive = false;
+    this.videoTrackAdded = false;
+  }
+
+  /**
+   * End the call with proper cleanup
    */
   async endCall(callId?: string) {
     try {
       console.log('🔴 Ending call...');
       
-      // Stop all tracks
-      this.localStream?.getTracks().forEach((track) => {
-        track.stop();
-        console.log('  - Stopped track:', track.kind);
-      });
-      this.remoteStream?.getTracks().forEach((track) => track.stop());
+      // Cleanup media tracks
+      this.cleanupMedia();
 
       // Close peer connection
-      this.peerConnection?.close();
-      console.log('  - Peer connection closed');
+      if (this.peerConnection) {
+        this.peerConnection.close();
+        console.log('  - Peer connection closed');
+      }
 
       // Update call status in Firestore
       const targetCallId = callId || this.currentCallId;
@@ -468,8 +558,6 @@ class CallService {
       }
 
       // Reset state
-      this.localStream = null;
-      this.remoteStream = null;
       this.peerConnection = null;
       this.currentCallId = null;
       this.backgroundMode = false;
@@ -548,6 +636,13 @@ class CallService {
    */
   isCallActive(): boolean {
     return this.currentCallId !== null && this.peerConnection !== null;
+  }
+
+  /**
+   * Check if audio session is active (for background handling)
+   */
+  isAudioSessionActive(): boolean {
+    return this.audioSessionActive;
   }
 }
 

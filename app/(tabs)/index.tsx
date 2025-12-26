@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Real-time updates with proper unread counts
+// app/(tabs)/index.tsx - Real-time updates with proper unread counts (without ordering)
 import { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, FlatList, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
@@ -89,7 +89,7 @@ export default function ChatsListScreen() {
         for (const userId of userIds) {
           const profile = await authService.getUserProfile(userId);
           const customNickname = await authService.getCustomNickname(userId);
-          const unreadCount = notificationService.getUnreadCount(userId); // Use notification service
+          const unreadCount = notificationService.getUnreadCount(userId);
           
           if (profile) {
             // Find last message with this user
@@ -98,7 +98,14 @@ export default function ChatsListScreen() {
               return (data.senderId === userId || data.receiverId === userId);
             });
             
-            const lastMsg = userMessages[userMessages.length - 1];
+            // Sort messages by timestamp to get the latest
+            userMessages.sort((a, b) => {
+              const timeA = a.data().timestamp?.toDate()?.getTime() || 0;
+              const timeB = b.data().timestamp?.toDate()?.getTime() || 0;
+              return timeB - timeA;
+            });
+            
+            const lastMsg = userMessages[0]; // Get latest message
             const lastMsgData = lastMsg?.data();
 
             chatPreviews.push({
@@ -123,12 +130,10 @@ export default function ChatsListScreen() {
         setLoading(false);
       };
 
-      // Real-time listener for sent messages
+      // Real-time listener for sent messages (without orderBy to avoid index requirement)
       const unsubscribe1 = firestore()
         .collection('messages')
         .where('senderId', '==', currentUser.uid)
-        .orderBy('timestamp', 'desc')
-        .limit(50)
         .onSnapshot(
           async (sentSnapshot) => {
             console.log('📬 Sent messages updated');
@@ -137,8 +142,6 @@ export default function ChatsListScreen() {
             const receivedSnapshot = await firestore()
               .collection('messages')
               .where('receiverId', '==', currentUser.uid)
-              .orderBy('timestamp', 'desc')
-              .limit(50)
               .get();
 
             const allMessages = [...sentSnapshot.docs, ...receivedSnapshot.docs];
@@ -152,12 +155,10 @@ export default function ChatsListScreen() {
           }
         );
 
-      // Real-time listener for received messages
+      // Real-time listener for received messages (without orderBy to avoid index requirement)
       const unsubscribe2 = firestore()
         .collection('messages')
         .where('receiverId', '==', currentUser.uid)
-        .orderBy('timestamp', 'desc')
-        .limit(50)
         .onSnapshot(
           async (receivedSnapshot) => {
             console.log('📬 Received messages updated');
@@ -166,8 +167,6 @@ export default function ChatsListScreen() {
             const sentSnapshot = await firestore()
               .collection('messages')
               .where('senderId', '==', currentUser.uid)
-              .orderBy('timestamp', 'desc')
-              .limit(50)
               .get();
 
             const allMessages = [...sentSnapshot.docs, ...receivedSnapshot.docs];
@@ -181,19 +180,13 @@ export default function ChatsListScreen() {
           }
         );
 
-      // Listen for unread count changes
-      const unsubscribe3 = notificationService.getAllUnreadCounts();
-      
       console.log('✅ Chat list listeners active');
 
-      // Return combined unsubscribe function
-      unsubscribeRef.current = () => {
+      return () => {
         console.log('🔌 Unsubscribing from chat list listeners');
-        unsubscribe1();
-        unsubscribe2();
+        unsubscribe1?.();
+        unsubscribe2?.();
       };
-
-      return unsubscribeRef.current;
     } catch (error) {
       console.error('Error loading chats:', error);
       setLoading(false);

@@ -20,8 +20,12 @@
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
-          "voip"
-        ]
+          "voip",
+          "remote-notification"
+        ],
+        "NSCameraUsageDescription": "This app needs access to camera for video calls",
+        "NSMicrophoneUsageDescription": "This app needs access to microphone for calls",
+        "NSUserNotificationUsageDescription": "This app needs notifications for call alerts and messages"
       }
     },
     "android": {
@@ -45,7 +49,10 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.FOREGROUND_SERVICE"
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN"
       ]
     },
     "plugins": [
@@ -82,7 +89,9 @@
         {
           "icon": "./assets/images/notification-icon.png",
           "color": "#667eea",
-          "sounds": []
+          "sounds": [
+            "./assets/sounds/call_ringtone.wav"
+          ]
         }
       ],
       "@react-native-firebase/app",
