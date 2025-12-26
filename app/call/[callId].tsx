@@ -1,4 +1,4 @@
-// app/call/[callId].tsx - Updated with caller name integration
+// app/call/[callId].tsx - Updated with native PiP support
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -6,8 +6,10 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Platform,
+  AppState,
 } from 'react-native';
-import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { useLocalSearchParams, router, Stack, useFocusEffect } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
 import { Text } from '@ui-kitten/components';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import callService from '@/services/call.service';
+import pipService from '@/services/pip.service';
 import firestore from '@react-native-firebase/firestore';
 import authService from '@/services/auth.service';
 
@@ -31,6 +34,8 @@ export default function CallScreen() {
   const [callDuration, setCallDuration] = useState(0);
   const [otherUserName, setOtherUserName] = useState('Unknown');
   const [otherUserPicture, setOtherUserPicture] = useState<string | null>(null);
+  const [isInPipMode, setIsInPipMode] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
 
   // Call duration timer
   useEffect(() => {
@@ -50,15 +55,69 @@ export default function CallScreen() {
     setupCall();
     const unsubscribe = monitorCallStatus();
 
+    // Setup PiP mode listener
+    pipService.setOnPipModeChanged((isInPip) => {
+      console.log('📺 PiP mode changed in call screen:', isInPip);
+      setIsInPipMode(isInPip);
+    });
+
+    // Setup app state listener for automatic PiP
+    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (
+        appStateRef.current === 'active' &&
+        (nextAppState === 'background' || nextAppState === 'inactive') &&
+        callStatus === 'connected' &&
+        !isEnding
+      ) {
+        // App is going to background during an active call - enter PiP
+        console.log('📺 App going to background during call - entering PiP mode');
+        await enterPipMode();
+      }
+      
+      appStateRef.current = nextAppState;
+    });
+
     return () => {
       if (!isEnding) {
-        console.log('📱 Navigating away from call screen - call will continue in background');
+        console.log('📱 Navigating away from call screen - call will continue');
       }
       if (unsubscribe) {
         unsubscribe();
       }
+      appStateSubscription?.remove();
     };
-  }, [callId]);
+  }, [callId, callStatus, isEnding]);
+
+  // Check PiP support on mount
+  useEffect(() => {
+    checkPipSupport();
+  }, []);
+
+  const checkPipSupport = async () => {
+    if (Platform.OS === 'android') {
+      const supported = await pipService.isPipSupported();
+      console.log('📺 PiP supported:', supported);
+    }
+  };
+
+  const enterPipMode = async () => {
+    if (Platform.OS !== 'android') {
+      console.log('📺 PiP only supported on Android');
+      return;
+    }
+
+    try {
+      // Use 16:9 aspect ratio for video calls, 9:16 for portrait
+      const success = await pipService.enterPipMode(16, 9);
+      if (success) {
+        console.log('✅ Successfully entered native PiP mode');
+      } else {
+        console.log('❌ Failed to enter PiP mode');
+      }
+    } catch (error) {
+      console.error('Error entering PiP mode:', error);
+    }
+  };
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -87,7 +146,6 @@ export default function CallScreen() {
         setOtherUserName(displayName);
         setOtherUserPicture(profile?.profilePicture || null);
 
-        // Set caller name in call service for notifications
         callService.setCallerName(displayName);
       }
     } catch (error) {
@@ -202,10 +260,44 @@ export default function CallScreen() {
     }
   };
 
-  const handleMinimize = () => {
-    // Navigate away - the global PIP and background notification will take over
+  const handleMinimize = async () => {
+    if (Platform.OS === 'android') {
+      // Try to enter PiP mode before navigating away
+      await enterPipMode();
+    }
+    // Navigate away - the call will continue
     router.back();
   };
+
+  // Simplified UI when in PiP mode (Android only)
+  if (isInPipMode && Platform.OS === 'android') {
+    return (
+      <View style={styles.pipModeContainer}>
+        {remoteStream && isVideoCall ? (
+          <RTCView
+            streamURL={remoteStream.toURL()}
+            style={styles.pipVideo}
+            objectFit="cover"
+            mirror={false}
+          />
+        ) : (
+          <LinearGradient
+            colors={['#667eea', '#764ba2']}
+            style={styles.pipVideoPlaceholder}
+          >
+            {otherUserPicture ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${otherUserPicture}` }}
+                style={styles.pipAvatarImage}
+              />
+            ) : (
+              <Ionicons name="person" size={48} color="#FFFFFF" />
+            )}
+          </LinearGradient>
+        )}
+      </View>
+    );
+  }
 
   return (
     <>
@@ -357,6 +449,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
+  },
+  pipModeContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  pipVideo: {
+    flex: 1,
+  },
+  pipVideoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pipAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   remoteVideo: {
     flex: 1,
