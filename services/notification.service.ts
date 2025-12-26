@@ -1,21 +1,36 @@
-// services/notification.service.ts - Enhanced with call notification handling
+// services/notification.service.ts - Enhanced with ongoing call handling
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, AppState } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import callService from './call.service';
+import { router } from 'expo-router';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const data = notification.request.content.data;
+    
+    // Don't show in-app alert for ongoing call notifications
+    if (data.type === 'ongoing_call') {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: true,
+      };
+    }
+    
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 class NotificationService {
@@ -25,6 +40,7 @@ class NotificationService {
   private appStateListener: any = null;
   private isAppInForeground: boolean = true;
   private callNotificationListener: any = null;
+  private notificationResponseListener: any = null;
 
   /**
    * Initialize notifications
@@ -43,13 +59,52 @@ class NotificationService {
       // Listen for foreground notifications
       this.setupForegroundListener();
       
-      // Setup call notification handling
-      this.setupCallNotificationHandling();
+      // Setup notification response handling (tapping notifications)
+      this.setupNotificationResponseHandler();
       
       console.log('✅ Notification service initialized');
     } catch (error) {
       console.error('❌ Error initializing notifications:', error);
     }
+  }
+
+  /**
+   * Setup notification response handler (handles tapping on notifications)
+   */
+  private setupNotificationResponseHandler(): void {
+    this.notificationResponseListener = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log('📱 Notification tapped:', response);
+        
+        const data = response.notification.request.content.data;
+        
+        // Handle ongoing call notification - navigate to call screen
+        if (data.type === 'ongoing_call' && data.callId) {
+          console.log('📞 Returning to ongoing call:', data.callId);
+          try {
+            router.push(`/call/${data.callId}`);
+          } catch (error) {
+            console.error('Error navigating to call:', error);
+          }
+        }
+        
+        // Handle new call notification
+        else if (data.type === 'call' && data.callId) {
+          console.log('📞 Incoming call notification tapped:', data.callId);
+          // The IncomingCallListener component will handle this
+        }
+        
+        // Handle message notification
+        else if (data.type === 'message' && data.senderId) {
+          console.log('💬 Message notification tapped from:', data.senderId);
+          try {
+            router.push(`/chat/${data.senderId}`);
+          } catch (error) {
+            console.error('Error navigating to chat:', error);
+          }
+        }
+      }
+    );
   }
 
   /**
@@ -60,7 +115,7 @@ class NotificationService {
       this.isAppInForeground = nextAppState === 'active';
       console.log('📱 App state changed:', nextAppState, 'Foreground:', this.isAppInForeground);
       
-      // Handle call notifications when returning from background
+      // Handle app foreground events
       if (nextAppState === 'active') {
         this.handleAppForeground();
       }
@@ -71,28 +126,8 @@ class NotificationService {
    * Handle app foreground events
    */
   private handleAppForeground(): void {
-    // Clear call-related notifications when app comes to foreground
-    this.clearCallNotifications();
-  }
-
-  /**
-   * Setup call notification handling
-   */
-  private setupCallNotificationHandling(): void {
-    // Handle notification responses (tapping on notifications)
-    this.callNotificationListener = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
-        console.log('📞 Notification response received:', response);
-        
-        const data = response.notification.request.content.data;
-        
-        // Handle call notifications
-        if (data.type === 'call' && data.callId) {
-          console.log('📞 Handling call notification for call:', data.callId);
-          // The app will handle navigation to the call screen
-        }
-      }
-    );
+    // Don't clear ongoing call notifications - they should persist
+    console.log('📱 App foregrounded - keeping ongoing call notifications');
   }
 
   /**
@@ -137,21 +172,41 @@ class NotificationService {
           });
       }
 
-      // Configure Android channel
+      // Configure Android channels
       if (Platform.OS === 'android') {
+        // Channel for calls
         await Notifications.setNotificationChannelAsync('calls', {
           name: 'Calls',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#FF3B30',
           sound: 'call_ringtone',
+          enableLights: true,
+          enableVibrate: true,
+          showBadge: true,
         });
 
+        // Channel for ongoing calls
+        await Notifications.setNotificationChannelAsync('ongoing_calls', {
+          name: 'Ongoing Calls',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0],
+          lightColor: '#34C759',
+          sound: null,
+          enableLights: false,
+          enableVibrate: false,
+          showBadge: false,
+        });
+
+        // Channel for messages
         await Notifications.setNotificationChannelAsync('messages', {
           name: 'Messages',
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#667eea',
+          enableLights: true,
+          enableVibrate: true,
+          showBadge: true,
         });
       }
     } catch (error) {
@@ -171,12 +226,6 @@ class NotificationService {
       // Handle different notification types
       if (data.type === 'message' && data.senderId) {
         this.incrementUnreadCount(data.senderId as string);
-      } else if (data.type === 'call') {
-        // Don't show call notifications if already in a call
-        if (callService.isCallActive()) {
-          console.log('🔕 Not showing call notification - already in a call');
-          return;
-        }
       }
     });
   }
@@ -198,7 +247,7 @@ class NotificationService {
       }
 
       // Don't send if app is in foreground (we'll show in-app indicators instead)
-      if (this.isAppInForeground && data.type !== 'call') {
+      if (this.isAppInForeground && data.type !== 'call' && data.type !== 'ongoing_call') {
         console.log('🔕 Not sending push notification - app is in foreground');
         // Still increment unread count for badge
         if (data.type === 'message' && data.senderId) {
@@ -226,13 +275,26 @@ class NotificationService {
         title,
         body,
         data,
-        sound: data.type === 'call' ? 'call_ringtone' : 'default',
+        sound: data.type === 'call' ? 'call_ringtone' : data.type === 'ongoing_call' ? null : 'default',
         badge: this.getTotalUnreadCount(),
+        priority: data.type === 'ongoing_call' ? 'high' : 'default',
       };
 
-      // Set Android channel for calls
-      if (Platform.OS === 'android' && data.type === 'call') {
-        notificationConfig.channelId = 'calls';
+      // Set Android channel
+      if (Platform.OS === 'android') {
+        if (data.type === 'call') {
+          notificationConfig.channelId = 'calls';
+        } else if (data.type === 'ongoing_call') {
+          notificationConfig.channelId = 'ongoing_calls';
+          notificationConfig.sticky = true;
+        } else {
+          notificationConfig.channelId = 'messages';
+        }
+      }
+
+      // iOS specific settings for ongoing calls
+      if (Platform.OS === 'ios' && data.type === 'ongoing_call') {
+        notificationConfig.categoryId = 'ongoing_call';
       }
 
       // Send push notification via Expo's API
@@ -401,21 +463,20 @@ class NotificationService {
   }
 
   /**
-   * Clear call-related notifications
+   * Clear call-related notifications (except ongoing ones)
    */
   async clearCallNotifications(): Promise<void> {
     try {
       // Get all notifications
       const notifications = await Notifications.getPresentedNotificationsAsync();
       
-      // Filter and dismiss call notifications
-      const callNotifications = notifications.filter(notification => 
-        notification.request.content.data.type === 'call'
-      );
-      
-      if (callNotifications.length > 0) {
-        await Notifications.dismissNotificationAsync(callNotifications[0].request.identifier);
-        console.log('🧹 Cleared call notifications');
+      // Filter and dismiss incoming call notifications (not ongoing ones)
+      for (const notification of notifications) {
+        const data = notification.request.content.data;
+        if (data.type === 'call') {
+          await Notifications.dismissNotificationAsync(notification.request.identifier);
+          console.log('🧹 Cleared incoming call notification');
+        }
       }
     } catch (error) {
       console.error('Error clearing call notifications:', error);
@@ -431,6 +492,9 @@ class NotificationService {
     }
     if (this.callNotificationListener) {
       this.callNotificationListener.remove();
+    }
+    if (this.notificationResponseListener) {
+      this.notificationResponseListener.remove();
     }
   }
 }

@@ -1,4 +1,4 @@
-// services/call.service.ts - FIXED: Proper background call support
+// services/call.service.ts - ENHANCED: Full background call support with notifications
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -9,6 +9,7 @@ import {
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
 import { Platform, AppState } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 interface CallData {
   callId: string;
@@ -28,6 +29,10 @@ class CallService {
   private videoTrackAdded: boolean = false;
   private audioSessionActive: boolean = false;
   private appStateListener: any = null;
+  private callNotificationId: string | null = null;
+  private callStartTime: number | null = null;
+  private durationInterval: any = null;
+  private otherUserName: string = 'Unknown';
 
   // WebRTC Configuration
   private configuration = {
@@ -51,7 +56,7 @@ class CallService {
       
       if (this.isCallActive()) {
         if (nextAppState === 'background' || nextAppState === 'inactive') {
-          console.log('📱 App backgrounded - enabling background audio mode');
+          console.log('📱 App backgrounded - enabling background mode');
           this.enableBackgroundMode();
         } else if (nextAppState === 'active') {
           console.log('📱 App foregrounded');
@@ -59,6 +64,82 @@ class CallService {
         }
       }
     });
+  }
+
+  /**
+   * Set caller name for notifications
+   */
+  setCallerName(name: string): void {
+    this.otherUserName = name;
+  }
+
+  /**
+   * Show ongoing call notification
+   */
+  private async showCallNotification(): Promise<void> {
+    try {
+      const duration = this.callStartTime 
+        ? Math.floor((Date.now() - this.callStartTime) / 1000)
+        : 0;
+      
+      const mins = Math.floor(duration / 60);
+      const secs = duration % 60;
+      const durationText = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+      this.callNotificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `📞 Call with ${this.otherUserName}`,
+          body: `Duration: ${durationText} - Tap to return`,
+          data: {
+            type: 'ongoing_call',
+            callId: this.currentCallId,
+          },
+          sound: false,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+          sticky: true,
+        },
+        trigger: null,
+      });
+
+      console.log('📢 Ongoing call notification shown:', this.callNotificationId);
+    } catch (error) {
+      console.error('❌ Error showing call notification:', error);
+    }
+  }
+
+  /**
+   * Update call notification with duration
+   */
+  private async updateCallNotification(): Promise<void> {
+    if (!this.callNotificationId || !this.backgroundMode) return;
+
+    try {
+      await this.dismissCallNotification();
+      await this.showCallNotification();
+    } catch (error) {
+      console.error('❌ Error updating call notification:', error);
+    }
+  }
+
+  /**
+   * Dismiss call notification
+   */
+  private async dismissCallNotification(): Promise<void> {
+    if (this.callNotificationId) {
+      try {
+        await Notifications.dismissNotificationAsync(this.callNotificationId);
+        this.callNotificationId = null;
+        console.log('🔕 Call notification dismissed');
+      } catch (error) {
+        console.error('❌ Error dismissing call notification:', error);
+      }
+    }
+
+    // Clear duration interval
+    if (this.durationInterval) {
+      clearInterval(this.durationInterval);
+      this.durationInterval = null;
+    }
   }
 
   /**
@@ -95,11 +176,11 @@ class CallService {
 
       // Mark audio session as active
       this.audioSessionActive = true;
+      this.callStartTime = Date.now();
       
       // Configure audio track to continue in background
       const audioTrack = this.localStream.getAudioTracks()[0];
       if (audioTrack) {
-        // Enable audio to continue in background
         audioTrack.enabled = true;
         console.log('🎤 Audio track configured for background playback');
       }
@@ -135,10 +216,17 @@ class CallService {
       const videoTrack = this.localStream.getVideoTracks()[0];
       if (videoTrack) {
         console.log('📹 Disabling video in background to save battery');
-        // Don't stop the track, just disable it so we can re-enable when foregrounded
         videoTrack.enabled = false;
       }
     }
+
+    // Show persistent notification
+    this.showCallNotification();
+
+    // Update notification every 5 seconds with duration
+    this.durationInterval = setInterval(() => {
+      this.updateCallNotification();
+    }, 5000);
 
     // Update Firestore
     if (this.currentCallId) {
@@ -152,7 +240,7 @@ class CallService {
         .catch(console.error);
     }
 
-    console.log('✅ Background mode enabled');
+    console.log('✅ Background mode enabled with notification');
   }
 
   /**
@@ -165,6 +253,9 @@ class CallService {
 
     console.log('🔊 Disabling background audio mode...');
     this.backgroundMode = false;
+    
+    // Dismiss notification
+    this.dismissCallNotification();
     
     // Re-enable video if it was enabled before backgrounding
     if (this.localStream && this.videoTrackAdded) {
@@ -573,6 +664,7 @@ class CallService {
     
     this.audioSessionActive = false;
     this.videoTrackAdded = false;
+    this.callStartTime = null;
   }
 
   /**
@@ -582,8 +674,9 @@ class CallService {
     try {
       console.log('🔴 Ending call...');
       
-      // Disable background mode
+      // Disable background mode and dismiss notification
       this.backgroundMode = false;
+      this.dismissCallNotification();
       
       // Cleanup media
       this.cleanupMedia();
@@ -605,6 +698,7 @@ class CallService {
       // Reset state
       this.peerConnection = null;
       this.currentCallId = null;
+      this.otherUserName = 'Unknown';
       
       console.log('✅ Call ended');
     } catch (error) {
@@ -679,10 +773,20 @@ class CallService {
     return this.audioSessionActive;
   }
 
+  isInBackgroundMode(): boolean {
+    return this.backgroundMode;
+  }
+
+  getCallDuration(): number {
+    if (!this.callStartTime) return 0;
+    return Math.floor((Date.now() - this.callStartTime) / 1000);
+  }
+
   cleanup(): void {
     if (this.appStateListener) {
       this.appStateListener.remove();
     }
+    this.dismissCallNotification();
   }
 }
 

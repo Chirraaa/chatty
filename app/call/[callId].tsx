@@ -1,4 +1,4 @@
-// app/call/[callId].tsx - Simplified to work with global PIP provider
+// app/call/[callId].tsx - Updated with caller name integration
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -52,8 +52,7 @@ export default function CallScreen() {
 
     return () => {
       if (!isEnding) {
-        // Don't end call when navigating away - let it continue in background
-        console.log('📱 Navigating away from call screen - call will continue in PIP');
+        console.log('📱 Navigating away from call screen - call will continue in background');
       }
       if (unsubscribe) {
         unsubscribe();
@@ -84,8 +83,12 @@ export default function CallScreen() {
         const profile = await authService.getUserProfile(otherUserId);
         const nickname = await authService.getCustomNickname(otherUserId);
 
-        setOtherUserName(nickname || profile?.username || 'Unknown');
+        const displayName = nickname || profile?.username || 'Unknown';
+        setOtherUserName(displayName);
         setOtherUserPicture(profile?.profilePicture || null);
+
+        // Set caller name in call service for notifications
+        callService.setCallerName(displayName);
       }
     } catch (error) {
       console.error('Error loading call info:', error);
@@ -200,7 +203,7 @@ export default function CallScreen() {
   };
 
   const handleMinimize = () => {
-    // Navigate away - the global PIP will take over
+    // Navigate away - the global PIP and background notification will take over
     router.back();
   };
 

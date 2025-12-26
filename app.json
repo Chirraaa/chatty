@@ -21,11 +21,13 @@
         "UIBackgroundModes": [
           "audio",
           "voip",
-          "remote-notification"
+          "remote-notification",
+          "fetch"
         ],
         "NSCameraUsageDescription": "This app needs access to camera for video calls",
         "NSMicrophoneUsageDescription": "This app needs access to microphone for calls",
-        "NSUserNotificationUsageDescription": "This app needs notifications for call alerts and messages"
+        "NSUserNotificationUsageDescription": "This app needs notifications for call alerts and messages",
+        "UIApplicationExitsOnSuspend": false
       }
     },
     "android": {
@@ -55,8 +57,11 @@
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         "android.permission.ACCESS_MEDIA_LOCATION",
-        "android.permission.READ_MEDIA_AUDIO"
-      ]
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.FOREGROUND_SERVICE_PHONE_CALL",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+      ],
+      "usesCleartextTraffic": false
     },
     "plugins": [
       "expo-router",
@@ -94,7 +99,8 @@
           "color": "#667eea",
           "sounds": [
             "./assets/sounds/call_ringtone.wav"
-          ]
+          ],
+          "mode": "production"
         }
       ],
       "@react-native-firebase/app",
@@ -105,10 +111,15 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
         "projectId": "d04beebb-37a7-4211-98e2-a62991575a65"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
