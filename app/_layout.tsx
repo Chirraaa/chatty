@@ -1,4 +1,4 @@
-// app/_layout.tsx - With notification initialization
+// app/_layout.tsx - With global PIP provider and notification initialization
 import '../polyfills';
 import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -9,6 +9,7 @@ import { auth } from '@/config/firebase';
 import authService from '@/services/auth.service';
 import notificationService from '@/services/notification.service';
 import { IncomingCallListener } from '@/components/incoming-call';
+import { CallPipProvider } from '@/components/call-pip-provider';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
@@ -53,10 +54,8 @@ export default function RootLayout() {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!isAuthenticated && !inAuthGroup) {
-      // Not authenticated and not in auth screens - redirect to login
       router.replace('/(auth)/login');
     } else if (isAuthenticated && inAuthGroup) {
-      // Authenticated but still on auth screens - redirect to tabs
       router.replace('/(tabs)');
     }
   }, [isAuthenticated, segments, isLoading]);
@@ -78,7 +77,14 @@ export default function RootLayout() {
             <Stack.Screen name="contact-profile/[userId]" options={{ headerShown: false }} />
             <Stack.Screen name="image-viewer/[messageId]" options={{ headerShown: false }} />
           </Stack>
-          {isAuthenticated && <IncomingCallListener />}
+          
+          {/* Global components that work anywhere in the app */}
+          {isAuthenticated && (
+            <>
+              <IncomingCallListener />
+              <CallPipProvider />
+            </>
+          )}
         </SafeAreaProvider>
       </ApplicationProvider>
     </>

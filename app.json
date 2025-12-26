@@ -101,13 +101,6 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "doctor": {
-      "reactNativeDirectoryCheck": {
-        "exclude": [
-          "react-native-webrtc"
-        ]
-      }
-    },
     "extra": {
       "router": {},
       "eas": {

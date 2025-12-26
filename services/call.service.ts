@@ -1,4 +1,4 @@
-// services/call.service.ts - Enhanced with proper background call support and stream management
+// services/call.service.ts - FIXED: Proper background call support
 import {
   RTCPeerConnection,
   RTCIceCandidate,
@@ -8,7 +8,7 @@ import {
 } from 'react-native-webrtc';
 import firestore from '@react-native-firebase/firestore';
 import { auth } from '@/config/firebase';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 
 interface CallData {
   callId: string;
@@ -27,8 +27,9 @@ class CallService {
   private backgroundMode: boolean = false;
   private videoTrackAdded: boolean = false;
   private audioSessionActive: boolean = false;
+  private appStateListener: any = null;
 
-  // WebRTC Configuration with STUN servers
+  // WebRTC Configuration
   private configuration = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -37,8 +38,31 @@ class CallService {
     ],
   };
 
+  constructor() {
+    this.setupAppStateListener();
+  }
+
   /**
-   * Initialize local media stream with enhanced error handling
+   * Setup app state listener for automatic background handling
+   */
+  private setupAppStateListener(): void {
+    this.appStateListener = AppState.addEventListener('change', (nextAppState) => {
+      console.log('📱 CallService: App state changed to:', nextAppState);
+      
+      if (this.isCallActive()) {
+        if (nextAppState === 'background' || nextAppState === 'inactive') {
+          console.log('📱 App backgrounded - enabling background audio mode');
+          this.enableBackgroundMode();
+        } else if (nextAppState === 'active') {
+          console.log('📱 App foregrounded');
+          this.disableBackgroundMode();
+        }
+      }
+    });
+  }
+
+  /**
+   * Initialize local media stream with background audio support
    */
   async initializeCall(isVideo: boolean): Promise<MediaStream> {
     try {
@@ -63,22 +87,106 @@ class CallService {
           : false,
       });
 
-      console.log('✅ Media stream obtained successfully');
+      console.log('✅ Media stream obtained');
       console.log('  - Audio tracks:', this.localStream.getAudioTracks().length);
       if (isVideo) {
         console.log('  - Video tracks:', this.localStream.getVideoTracks().length);
       }
 
-      // Mark audio session as active for background handling
+      // Mark audio session as active
       this.audioSessionActive = true;
+      
+      // Configure audio track to continue in background
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        // Enable audio to continue in background
+        audioTrack.enabled = true;
+        console.log('🎤 Audio track configured for background playback');
+      }
       
       return this.localStream;
     } catch (error: any) {
       console.error('❌ Error getting user media:', error);
-      console.error('  - Error name:', error.name);
-      console.error('  - Error message:', error.message);
       throw new Error(`Failed to access ${isVideo ? 'camera/microphone' : 'microphone'}. Please check permissions.`);
     }
+  }
+
+  /**
+   * Enable background mode - keeps audio active when app is backgrounded
+   */
+  enableBackgroundMode(): void {
+    if (!this.isCallActive()) {
+      console.log('⚠️ No active call to enable background mode for');
+      return;
+    }
+
+    console.log('🔊 Enabling background audio mode...');
+    this.backgroundMode = true;
+    
+    // Keep audio track active in background
+    if (this.localStream) {
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = true;
+        console.log('✅ Audio track kept active for background');
+      }
+
+      // Disable video in background to save battery
+      const videoTrack = this.localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        console.log('📹 Disabling video in background to save battery');
+        // Don't stop the track, just disable it so we can re-enable when foregrounded
+        videoTrack.enabled = false;
+      }
+    }
+
+    // Update Firestore
+    if (this.currentCallId) {
+      firestore()
+        .collection('calls')
+        .doc(this.currentCallId)
+        .update({ 
+          backgroundMode: true,
+          lastBackgroundedAt: firestore.FieldValue.serverTimestamp(),
+        })
+        .catch(console.error);
+    }
+
+    console.log('✅ Background mode enabled');
+  }
+
+  /**
+   * Disable background mode - restore normal operation when app is foregrounded
+   */
+  disableBackgroundMode(): void {
+    if (!this.isCallActive()) {
+      return;
+    }
+
+    console.log('🔊 Disabling background audio mode...');
+    this.backgroundMode = false;
+    
+    // Re-enable video if it was enabled before backgrounding
+    if (this.localStream && this.videoTrackAdded) {
+      const videoTrack = this.localStream.getVideoTracks()[0];
+      if (videoTrack && !videoTrack.enabled) {
+        console.log('📹 Re-enabling video after foreground');
+        videoTrack.enabled = true;
+      }
+    }
+
+    // Update Firestore
+    if (this.currentCallId) {
+      firestore()
+        .collection('calls')
+        .doc(this.currentCallId)
+        .update({ 
+          backgroundMode: false,
+        })
+        .catch(console.error);
+    }
+
+    console.log('✅ Background mode disabled');
   }
 
   /**
@@ -92,7 +200,6 @@ class CallService {
         throw new Error('No active call');
       }
 
-      // Check if video track already exists
       const existingVideoTrack = this.localStream.getVideoTracks()[0];
       if (existingVideoTrack) {
         console.log('📹 Video track already exists, enabling it');
@@ -121,7 +228,7 @@ class CallService {
       this.localStream.addTrack(videoTrack);
       
       // Add track to peer connection
-      const sender = this.peerConnection.addTrack(videoTrack, this.localStream);
+      this.peerConnection.addTrack(videoTrack, this.localStream);
       console.log('✅ Video track added to peer connection');
       
       this.videoTrackAdded = true;
@@ -137,7 +244,7 @@ class CallService {
   }
 
   /**
-   * Renegotiate connection (for adding/removing tracks)
+   * Renegotiate connection
    */
   private async renegotiate(): Promise<void> {
     try {
@@ -147,7 +254,6 @@ class CallService {
 
       console.log('🔄 Renegotiating connection...');
 
-      // Create new offer
       const offer = await this.peerConnection.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true,
@@ -155,7 +261,6 @@ class CallService {
 
       await this.peerConnection.setLocalDescription(offer);
 
-      // Update offer in Firestore
       await firestore()
         .collection('calls')
         .doc(this.currentCallId)
@@ -175,7 +280,7 @@ class CallService {
   }
 
   /**
-   * Create a new call with enhanced error handling
+   * Create a new call
    */
   async createCall(receiverId: string, isVideo: boolean): Promise<string> {
     try {
@@ -190,19 +295,17 @@ class CallService {
       console.log('  - Type:', isVideo ? 'video' : 'audio');
 
       // Get local stream
-      console.log('1️⃣ Initializing media...');
       await this.initializeCall(isVideo);
 
       // Create call document
-      console.log('2️⃣ Creating Firestore call document...');
       const callRef = await firestore().collection('calls').add({
         callerId: currentUser.uid,
         receiverId,
         status: 'calling',
         isVideo,
         createdAt: firestore.FieldValue.serverTimestamp(),
-        backgroundMode: false, // Track if call was backgrounded
-        platform: Platform.OS, // Track platform for compatibility
+        backgroundMode: false,
+        platform: Platform.OS,
       });
 
       const callId = callRef.id;
@@ -210,12 +313,9 @@ class CallService {
       console.log('✅ Call document created:', callId);
 
       // Create peer connection
-      console.log('3️⃣ Creating peer connection...');
       this.peerConnection = new RTCPeerConnection(this.configuration);
-      console.log('✅ Peer connection created');
 
       // Add local stream to peer connection
-      console.log('4️⃣ Adding local stream to peer connection...');
       if (this.localStream) {
         this.localStream.getTracks().forEach((track) => {
           console.log('  - Adding track:', track.kind);
@@ -235,27 +335,20 @@ class CallService {
       // Handle ICE candidates
       (this.peerConnection as any).onicecandidate = async (event: any) => {
         if (event.candidate) {
-          console.log('🧊 ICE candidate generated');
-          try {
-            await firestore()
-              .collection('calls')
-              .doc(callId)
-              .collection('callerCandidates')
-              .add(event.candidate.toJSON());
-            console.log('✅ ICE candidate saved');
-          } catch (error) {
-            console.error('❌ Failed to save ICE candidate:', error);
-          }
+          await firestore()
+            .collection('calls')
+            .doc(callId)
+            .collection('callerCandidates')
+            .add(event.candidate.toJSON());
         }
       };
 
       // Handle connection state changes
       (this.peerConnection as any).onconnectionstatechange = () => {
         const state = (this.peerConnection as any).connectionState;
-        console.log('🔗 Connection state changed:', state);
+        console.log('🔗 Connection state:', state);
         
         if (state === 'connected') {
-          console.log('🎉 Peer connection established');
           firestore().collection('calls').doc(callId).update({
             status: 'connected',
             connectedAt: firestore.FieldValue.serverTimestamp(),
@@ -263,41 +356,30 @@ class CallService {
         }
       };
 
-      // Create and set offer
-      console.log('5️⃣ Creating offer...');
+      // Create offer
       const offer = await this.peerConnection.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: isVideo,
       });
-      console.log('✅ Offer created');
 
-      console.log('6️⃣ Setting local description...');
       await this.peerConnection.setLocalDescription(offer);
-      console.log('✅ Local description set');
 
-      // Save offer to Firestore
-      console.log('7️⃣ Saving offer to Firestore...');
+      // Save offer
       await callRef.update({
         offer: {
           type: offer.type,
           sdp: offer.sdp,
         },
       });
-      console.log('✅ Offer saved to Firestore');
 
-      // Listen for answer
-      console.log('8️⃣ Setting up listeners...');
+      // Setup listeners
       this.listenForAnswer(callId);
       this.listenForRemoteCandidates(callId, 'answererCandidates');
-      console.log('✅ Listeners set up');
 
-      console.log('🎉 Call creation complete! Call ID:', callId);
+      console.log('✅ Call created successfully');
       return callId;
     } catch (error: any) {
       console.error('❌ Error creating call:', error);
-      console.error('  - Error name:', error.name);
-      console.error('  - Error message:', error.message);
-      console.error('  - Error stack:', error.stack);
       this.endCall();
       throw error;
     }
@@ -347,13 +429,12 @@ class CallService {
         }
       };
 
-      // Handle connection state changes
+      // Handle connection state
       (this.peerConnection as any).onconnectionstatechange = () => {
         const state = (this.peerConnection as any).connectionState;
-        console.log('🔗 Connection state changed:', state);
+        console.log('🔗 Connection state:', state);
         
         if (state === 'connected') {
-          console.log('🎉 Peer connection established');
           firestore().collection('calls').doc(callId).update({
             status: 'connected',
             connectedAt: firestore.FieldValue.serverTimestamp(),
@@ -361,15 +442,15 @@ class CallService {
         }
       };
 
-      // Set remote description (offer)
+      // Set remote description
       const offer = new RTCSessionDescription(callData.offer);
       await this.peerConnection.setRemoteDescription(offer);
 
-      // Create and set answer
+      // Create answer
       const answer = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(answer);
 
-      // Save answer to Firestore
+      // Save answer
       await firestore().collection('calls').doc(callId).update({
         answer: {
           type: answer.type,
@@ -379,10 +460,11 @@ class CallService {
         answeredAt: firestore.FieldValue.serverTimestamp(),
       });
 
-      // Listen for remote ICE candidates and offer updates (for renegotiation)
+      // Listen for remote candidates and offer updates
       this.listenForRemoteCandidates(callId, 'callerCandidates');
       this.listenForOfferUpdates(callId);
-      console.log('✅ Call answered successfully');
+      
+      console.log('✅ Call answered');
     } catch (error) {
       console.error('Error answering call:', error);
       this.endCall();
@@ -391,7 +473,7 @@ class CallService {
   }
 
   /**
-   * Listen for answer (for caller)
+   * Listen for answer
    */
   private listenForAnswer(callId: string) {
     firestore()
@@ -401,21 +483,19 @@ class CallService {
         const data = snapshot.data();
         if (!data) return;
 
-        // Check if we already have a remote description
         const hasRemoteDesc = this.peerConnection && 
           (this.peerConnection as any).remoteDescription;
 
         if (data.answer && !hasRemoteDesc) {
-          console.log('📥 Received answer from receiver');
+          console.log('📥 Received answer');
           const answer = new RTCSessionDescription(data.answer);
           await this.peerConnection?.setRemoteDescription(answer);
-          console.log('✅ Remote description set');
         }
       });
   }
 
   /**
-   * Listen for offer updates (for answerer, during renegotiation)
+   * Listen for offer updates
    */
   private listenForOfferUpdates(callId: string) {
     let lastOfferSdp: string | null = null;
@@ -427,19 +507,16 @@ class CallService {
         const data = snapshot.data();
         if (!data || !data.offer) return;
 
-        // Check if offer has changed (renegotiation)
         if (data.offer.sdp !== lastOfferSdp && lastOfferSdp !== null) {
-          console.log('🔄 Received updated offer (renegotiation)');
+          console.log('🔄 Received updated offer');
           try {
             const offer = new RTCSessionDescription(data.offer);
             await this.peerConnection?.setRemoteDescription(offer);
 
-            // Create new answer
             const answer = await this.peerConnection?.createAnswer();
             if (answer) {
               await this.peerConnection?.setLocalDescription(answer);
 
-              // Update answer in Firestore
               await firestore().collection('calls').doc(callId).update({
                 answer: {
                   type: answer.type,
@@ -447,8 +524,6 @@ class CallService {
                 },
                 updatedAt: firestore.FieldValue.serverTimestamp(),
               });
-
-              console.log('✅ Renegotiation answer sent');
             }
           } catch (error) {
             console.error('❌ Error handling offer update:', error);
@@ -471,41 +546,11 @@ class CallService {
         snapshot.docChanges().forEach(async (change) => {
           if (change.type === 'added') {
             const data = change.doc.data();
-            console.log('🧊 Received remote ICE candidate');
             const candidate = new RTCIceCandidate(data);
             await this.peerConnection?.addIceCandidate(candidate);
           }
         });
       });
-  }
-
-  /**
-   * Set background mode for call - FIXED: Proper background handling
-   */
-  setBackgroundMode(enabled: boolean): void {
-    this.backgroundMode = enabled;
-    console.log('📱 Background mode:', enabled ? 'ENABLED' : 'DISABLED');
-    
-    if (this.currentCallId) {
-      firestore()
-        .collection('calls')
-        .doc(this.currentCallId)
-        .update({ 
-          backgroundMode: enabled,
-          lastBackgroundedAt: enabled ? firestore.FieldValue.serverTimestamp() : null,
-        })
-        .catch(console.error);
-    }
-
-    // Handle audio track when backgrounding
-    if (this.localStream) {
-      const audioTrack = this.localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        // Keep audio active in background
-        audioTrack.enabled = true;
-        console.log('🎤 Audio track kept active for background call');
-      }
-    }
   }
 
   /**
@@ -531,38 +576,37 @@ class CallService {
   }
 
   /**
-   * End the call with proper cleanup
+   * End the call
    */
   async endCall(callId?: string) {
     try {
       console.log('🔴 Ending call...');
       
-      // Cleanup media tracks
+      // Disable background mode
+      this.backgroundMode = false;
+      
+      // Cleanup media
       this.cleanupMedia();
 
       // Close peer connection
       if (this.peerConnection) {
         this.peerConnection.close();
-        console.log('  - Peer connection closed');
       }
 
-      // Update call status in Firestore
+      // Update call status
       const targetCallId = callId || this.currentCallId;
       if (targetCallId) {
         await firestore().collection('calls').doc(targetCallId).update({
           status: 'ended',
           endedAt: firestore.FieldValue.serverTimestamp(),
-          backgroundMode: this.backgroundMode,
         });
-        console.log('  - Call status updated in Firestore');
       }
 
       // Reset state
       this.peerConnection = null;
       this.currentCallId = null;
-      this.backgroundMode = false;
       
-      console.log('✅ Call ended successfully');
+      console.log('✅ Call ended');
     } catch (error) {
       console.error('Error ending call:', error);
     }
@@ -599,7 +643,7 @@ class CallService {
   }
 
   /**
-   * Switch camera (front/back)
+   * Switch camera
    */
   async switchCamera() {
     if (!this.localStream) return;
@@ -607,9 +651,8 @@ class CallService {
     const videoTrack = this.localStream.getVideoTracks()[0];
     if (videoTrack) {
       console.log('🔄 Switching camera...');
-      // @ts-ignore - _switchCamera is available in react-native-webrtc
+      // @ts-ignore
       await videoTrack._switchCamera();
-      console.log('✅ Camera switched');
     }
   }
 
@@ -624,25 +667,22 @@ class CallService {
     return this.remoteStream;
   }
 
-  /**
-   * Get current call ID
-   */
   getCurrentCallId(): string | null {
     return this.currentCallId;
   }
 
-  /**
-   * Check if call is active
-   */
   isCallActive(): boolean {
     return this.currentCallId !== null && this.peerConnection !== null;
   }
 
-  /**
-   * Check if audio session is active (for background handling)
-   */
   isAudioSessionActive(): boolean {
     return this.audioSessionActive;
+  }
+
+  cleanup(): void {
+    if (this.appStateListener) {
+      this.appStateListener.remove();
+    }
   }
 }
 
