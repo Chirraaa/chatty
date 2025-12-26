@@ -52,7 +52,10 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.WAKE_LOCK",
         "android.permission.BLUETOOTH",
-        "android.permission.BLUETOOTH_ADMIN"
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_AUDIO"
       ]
     },
     "plugins": [
@@ -104,7 +107,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "15154222-c121-4cc6-b13b-febfae5aef8f"
+        "projectId": "d57d36df-7724-483f-b585-a961f6a89441"
       }
     }
   }
